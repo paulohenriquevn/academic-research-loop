@@ -295,7 +295,34 @@ Test coverage:
 - Internet access (for Arxiv and Semantic Scholar APIs)
 - `jq` (used by stop hook for JSON processing)
 
-## Inspiration
+## Acknowledgments & References
 
-> "One day, frontier AI research used to be done by meat computers in between eating, sleeping, having other fun, and synchronizing once in a while using sound wave interconnect in the ritual of 'group meeting'."
-> — Andrej Karpathy, March 2026
+This project stands on the shoulders of three remarkable ideas. We are deeply grateful to their creators.
+
+### [Autoresearch](https://github.com/karpathy/autoresearch) — Andrej Karpathy
+
+> *"One day, frontier AI research used to be done by meat computers in between eating, sleeping, having other fun, and synchronizing once in a while using sound wave interconnect in the ritual of 'group meeting'. That era is long gone."*
+> — @karpathy, March 2026
+
+Autoresearch introduced the paradigm of autonomous AI experimentation: an agent modifies code, runs an experiment, evaluates the result against a metric, keeps or discards, and repeats. Our quality gate system (evaluate/keep/discard per phase) is a direct adaptation of this pattern — instead of `val_bpb`, we score research quality on rubrics; instead of `train.py`, we iterate on a literature survey.
+
+### [Ralph Wiggum Technique](https://ghuntley.com/ralph/) — Geoffrey Huntley
+
+The Ralph Wiggum technique is the foundation of our loop mechanism. The elegant insight: use a stop hook to intercept Claude's exit and re-inject the same prompt, letting the agent see its own previous work on disk. Our phase-aware stop hook extends this with a 7-phase state machine, quality gates, and inter-agent communication — but the core mechanism is Ralph's: same prompt, self-referential iteration, completion promises.
+
+The [Claude Code implementation](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum) by Daisy Hollman (Anthropic) provided the reference implementation we built upon.
+
+### [Autosearch](https://github.com/FullStackRetrieval-com/RetrievalTutorials) — Multi-Agent Academic Research
+
+Autosearch demonstrated that academic research benefits from specialized agent communities — not a single generalist, but a team with distinct roles (editor, writer, reviewer, fact-checker). Our 14-agent architecture, mandatory group meetings, inter-agent message protocol, and per-section collaborative writing are all inspired by Autosearch's multi-agent orchestration patterns.
+
+### Additional Inspirations
+
+- **[Claude Code](https://github.com/anthropics/claude-code)** by Anthropic — the plugin system, hook architecture, and agent framework that makes this possible
+- **[ar5iv](https://ar5iv.labs.arxiv.org/)** — HTML rendering of arxiv papers that enables full-text analysis without PDF parsing
+- **[Semantic Scholar API](https://api.semanticscholar.org/)** by Allen AI — academic paper search and metadata
+- **[Arxiv API](https://arxiv.org/help/api/)** — open access to the world's preprint repository
+
+## License
+
+[MIT](LICENSE)
