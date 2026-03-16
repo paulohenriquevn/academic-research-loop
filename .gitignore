@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+research-output/
+.claude/research-loop.local.md
+*.db

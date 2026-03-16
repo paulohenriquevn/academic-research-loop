@@ -1,0 +1,23 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "academic-research-loop",
+  "version": "1.0.0",
+  "description": "Autonomous academic research pipeline — discovers papers, analyzes with full-text, synthesizes themes, and writes complete survey papers with citations. Powered by a team of 14 AI research agents with mandatory group meetings.",
+  "owner": {
+    "name": "paulohenriquevn",
+    "email": "paulo@usemacaw.com"
+  },
+  "plugins": [
+    {
+      "name": "academic-research-loop",
+      "description": "Autonomous academic research pipeline with 7-phase pipeline, 14 specialized agents, quality gates, fact-checking, and inter-agent communication. Give it a topic, walk away, come back to a complete literature survey.",
+      "source": ".",
+      "version": "1.0.0",
+      "author": {
+        "name": "Paulo (usemacaw)",
+        "email": "paulo@usemacaw.com"
+      },
+      "category": "research"
+    }
+  ]
+}

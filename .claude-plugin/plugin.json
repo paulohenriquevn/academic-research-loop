@@ -1,0 +1,22 @@
+{
+  "name": "academic-research-loop",
+  "version": "1.0.0",
+  "description": "Autonomous academic research pipeline using Ralph Wiggum loop pattern. Discovers papers via Arxiv and Semantic Scholar, screens for relevance, analyzes findings, synthesizes themes, and generates a complete survey/paper in Markdown with BibTeX citations.",
+  "author": {
+    "name": "Paulo (usemacaw)",
+    "email": "paulo@usemacaw.com"
+  },
+  "repository": "https://github.com/paulohenriquevn/academic-research-loop",
+  "license": "MIT",
+  "keywords": [
+    "academic-research",
+    "literature-review",
+    "survey-generation",
+    "arxiv",
+    "semantic-scholar",
+    "bibtex",
+    "rag",
+    "autonomous-agents",
+    "ralph-wiggum"
+  ]
+}

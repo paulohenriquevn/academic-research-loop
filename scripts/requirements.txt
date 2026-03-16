@@ -1,0 +1,5 @@
+# Academic Research Loop - Python dependencies
+# All search scripts use only Python stdlib (urllib, json, xml.etree).
+# No external dependencies required.
+#
+# Optional: Set SEMANTIC_SCHOLAR_API_KEY env var for higher rate limits.
