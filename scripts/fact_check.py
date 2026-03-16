@@ -54,15 +54,91 @@ def extract_cited_passages(draft_text: str) -> list[dict]:
     return passages
 
 
-def load_paper_abstracts(db_path: str) -> dict[str, dict]:
-    """Load paper abstracts and titles from database, keyed by bibtex_key."""
+def _try_sync_bibtex_keys(db_path: str, bib_path: str | None) -> int:
+    """Attempt to sync bibtex_keys from .bib file if DB has NULLs.
+
+    Returns number of keys synced. This is a self-healing mechanism:
+    if the pipeline failed to sync keys during Phase 3, the fact-checker
+    fixes it before proceeding.
+    """
+    conn = sqlite3.connect(db_path)
+    null_count = conn.execute(
+        "SELECT COUNT(*) FROM papers WHERE bibtex_key IS NULL AND status = 'shortlisted'"
+    ).fetchone()[0]
+    conn.close()
+
+    if null_count == 0 or not bib_path:
+        return 0
+
+    # Try to find the bib file
+    bib = Path(bib_path) if bib_path else None
+    if not bib or not bib.exists():
+        # Try common locations relative to DB
+        db_dir = Path(db_path).parent
+        for candidate in [db_dir / "references.bib", db_dir / "../references.bib"]:
+            if candidate.exists():
+                bib = candidate
+                break
+
+    if not bib or not bib.exists():
+        return 0
+
+    # Parse bib and sync
+    bib_content = bib.read_text(encoding="utf-8")
+    entries = re.findall(r"@\w+\{([^,]+),.*?eprint\s*=\s*\{([^}]+)\}", bib_content, re.DOTALL)
+
+    conn = sqlite3.connect(db_path)
+    synced = 0
+    for key, arxiv_id in entries:
+        key = key.strip()
+        arxiv_id = arxiv_id.strip()
+        result = conn.execute(
+            "UPDATE papers SET bibtex_key = ?, updated_at = CURRENT_TIMESTAMP "
+            "WHERE external_ids LIKE ? AND bibtex_key IS NULL",
+            (key, f'%"arxiv": "{arxiv_id}"%'),
+        )
+        synced += result.rowcount
+
+    conn.commit()
+    conn.close()
+    return synced
+
+
+def load_paper_abstracts(db_path: str, bib_path: str | None = None) -> dict[str, dict]:
+    """Load paper abstracts and titles from database, keyed by bibtex_key.
+
+    If bibtex_key is NULL for shortlisted papers, attempts self-healing
+    by syncing from references.bib before loading.
+    """
+    # Self-healing: sync bibtex_keys if missing
+    synced = _try_sync_bibtex_keys(db_path, bib_path)
+    if synced > 0:
+        print(
+            f"[fact_check] Self-healed: synced {synced} bibtex_key(s) from .bib to DB",
+            file=sys.stderr,
+        )
+
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
 
     rows = conn.execute(
         "SELECT bibtex_key, title, abstract, full_text FROM papers WHERE bibtex_key IS NOT NULL"
     ).fetchall()
+
+    # Check if we still have unresolved NULLs
+    null_rows = conn.execute(
+        "SELECT id, title FROM papers WHERE bibtex_key IS NULL AND status = 'shortlisted'"
+    ).fetchall()
     conn.close()
+
+    if null_rows:
+        null_titles = [r["title"][:50] for r in null_rows]
+        print(
+            f"[fact_check] WARNING: {len(null_rows)} shortlisted paper(s) still have "
+            f"NULL bibtex_key after sync attempt: {null_titles}. "
+            f"Run: manage_citations.py sync-db --bib-file references.bib --db-path {db_path}",
+            file=sys.stderr,
+        )
 
     papers = {}
     for row in rows:
@@ -76,21 +152,23 @@ def load_paper_abstracts(db_path: str) -> dict[str, dict]:
 
 
 def load_analyses(db_path: str) -> dict[str, dict]:
-    """Load paper analyses from database, keyed by paper_id."""
+    """Load paper analyses from database, keyed by bibtex_key.
+
+    Falls back to paper_id matching if bibtex_key is unavailable.
+    """
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
 
-    # Join to get bibtex_key
+    # Primary: join on bibtex_key
     rows = conn.execute(
-        """SELECT a.*, p.bibtex_key FROM analyses a
-           JOIN papers p ON a.paper_id = p.id
-           WHERE p.bibtex_key IS NOT NULL"""
+        """SELECT a.*, p.bibtex_key, p.id as paper_id FROM analyses a
+           JOIN papers p ON a.paper_id = p.id"""
     ).fetchall()
     conn.close()
 
     analyses = {}
     for row in rows:
-        key = row["bibtex_key"]
+        key = row["bibtex_key"] or row["paper_id"]
         analyses[key] = {
             "key_findings": json.loads(row["key_findings"]) if row["key_findings"] else [],
             "methodology": row["methodology"] or "",
@@ -156,9 +234,15 @@ def check_claim_support(passage: dict, papers: dict[str, dict],
     }
 
 
-def run_fact_check(draft_path: str, db_path: str) -> dict:
+def run_fact_check(draft_path: str, db_path: str, bib_path: str | None = None) -> dict:
     """Run full fact-check on a draft against the paper database."""
     draft_text = Path(draft_path).read_text(encoding="utf-8")
+
+    # Auto-detect bib file if not provided
+    if not bib_path:
+        candidate = Path(draft_path).parent / "references.bib"
+        if candidate.exists():
+            bib_path = str(candidate)
 
     passages = extract_cited_passages(draft_text)
 
@@ -169,7 +253,7 @@ def run_fact_check(draft_path: str, db_path: str) -> dict:
             "total_passages": 0,
         }
 
-    papers = load_paper_abstracts(db_path)
+    papers = load_paper_abstracts(db_path, bib_path)
     analyses = load_analyses(db_path)
 
     results = []
@@ -214,6 +298,8 @@ def main() -> None:
     check_p = subparsers.add_parser("check", help="Run fact-check on draft")
     check_p.add_argument("--draft-file", required=True)
     check_p.add_argument("--db-path", required=True)
+    check_p.add_argument("--bib-file", default=None,
+                          help="BibTeX file path — used to self-heal NULL bibtex_keys")
 
     # extract-claims
     extract_p = subparsers.add_parser("extract-claims",
@@ -223,7 +309,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "check":
-        result = run_fact_check(args.draft_file, args.db_path)
+        result = run_fact_check(args.draft_file, args.db_path, getattr(args, "bib_file", None))
         json.dump(result, sys.stdout, indent=2)
 
     elif args.command == "extract-claims":

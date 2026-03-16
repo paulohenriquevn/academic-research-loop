@@ -35,6 +35,7 @@ OUTPUT_DIR=$(parse_field "output_dir")
 PAPERS_FOUND=$(parse_field "papers_found")
 PAPERS_SCREENED=$(parse_field "papers_screened")
 PAPERS_ANALYZED=$(parse_field "papers_analyzed")
+EXPERIMENTS_ENABLED=$(parse_field "experiments_enabled")
 
 # Phase max iterations (bash associative array)
 declare -A PHASE_MAX_ITER
@@ -44,7 +45,12 @@ PHASE_MAX_ITER[3]=5   # analysis
 PHASE_MAX_ITER[4]=3   # synthesis (outline + critique + revision)
 PHASE_MAX_ITER[5]=4   # writing (instructions + per-section writing)
 PHASE_MAX_ITER[6]=3   # review (peer review + fact-check + revision)
-PHASE_MAX_ITER[7]=1   # polish
+PHASE_MAX_ITER[7]=2   # polish (figures + cross-validation + LaTeX export)
+
+# Extend Phase 4 for experiments
+if [[ "$EXPERIMENTS_ENABLED" == "true" ]]; then
+  PHASE_MAX_ITER[4]=6   # synthesis + experiment design + experiment execution
+fi
 
 # Phase names lookup
 declare -A PHASE_NAMES
@@ -256,6 +262,7 @@ min_papers: $(parse_field "min_papers")
 papers_found: $PAPERS_FOUND
 papers_screened: $PAPERS_SCREENED
 papers_analyzed: $PAPERS_ANALYZED
+experiments_enabled: ${EXPERIMENTS_ENABLED:-false}
 ---
 
 $PROMPT_TEXT

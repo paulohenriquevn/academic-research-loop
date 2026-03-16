@@ -13,6 +13,8 @@ MAX_ITERATIONS=50
 COMPLETION_PROMISE="RESEARCH COMPLETE"
 MIN_PAPERS=10
 OUTPUT_DIR="./research-output"
+CODEBASE_PATH=""
+EXPERIMENTS_ENABLED=""
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -31,6 +33,10 @@ OPTIONS:
   --completion-promise '<text>'  Promise phrase (default: "RESEARCH COMPLETE")
   --min-papers <n>               Minimum papers to discover (default: 10)
   --output-dir <path>            Output directory (default: ./research-output)
+  --codebase <path>              Enable APPLIED RESEARCH mode — analyze this
+                                 project and map literature to its components
+  --experiments                  Enable EXPERIMENTATION mode — write code,
+                                 run benchmarks, train models, measure results
   -h, --help                     Show this help message
 
 DESCRIPTION:
@@ -41,6 +47,11 @@ DESCRIPTION:
   synthesizes findings, and produces a complete survey/paper in Markdown
   with BibTeX citations.
 
+  With --codebase: enables APPLIED RESEARCH mode. The agent first analyzes
+  the codebase, derives research questions from its components, and maps
+  every paper finding to a specific module. Output includes gap analysis,
+  implementation recommendations, and proposed benchmarks.
+
 PHASES:
   1. Discovery   (max 3 iter)  Search for papers across multiple sources
   2. Screening   (max 2 iter)  Score candidates for relevance
@@ -48,22 +59,31 @@ PHASES:
   4. Synthesis   (max 2 iter)  Identify themes, gaps, contradictions
   5. Writing     (max 3 iter)  Draft the paper with citations
   6. Review      (max 2 iter)  Academic peer-review and revision
-  7. Polish      (max 1 iter)  Final formatting and citation validation
+  7. Polish      (max 1 iter)  Figures, cross-validation, LaTeX export, final polish
 
 EXAMPLES:
   /research-loop Transformer architectures for protein folding
   /research-loop "LLMs for scientific discovery" --min-papers 15
   /research-loop RAG techniques --max-iterations 30 --output-dir ./rag-survey
+  /research-loop "Voice agent safety" --codebase ~/projects/my-voice-app
 
 OUTPUT:
   research-output/
-  ├── state/candidates.json     All discovered papers
-  ├── state/shortlist.json      Screened papers
-  ├── state/analyses/           Per-paper analysis files
-  ├── synthesis.md              Cross-paper synthesis
-  ├── draft.md                  Paper draft
+  ├── final.md                  Polished final paper (Markdown)
+  ├── final.tex                 LaTeX version (submission-ready)
   ├── references.bib            BibTeX bibliography
-  └── final.md                  Polished final paper
+  ├── research.db               SQLite database (source of truth)
+  ├── synthesis.md              Cross-paper synthesis
+  ├── figures/                  Generated SVG figures + scripts
+  │   ├── figure_1_*.svg
+  │   └── gen_figure_*.py
+  └── state/
+      ├── candidates.json       All discovered papers
+      ├── shortlist.json        Screened papers
+      ├── analyses/             Per-paper analysis files
+      ├── meetings/             Group meeting minutes
+      ├── outline.md            Survey structure
+      └── validation_report.json  Cross-validation results
 HELP_EOF
       exit 0
       ;;
@@ -99,6 +119,21 @@ HELP_EOF
       OUTPUT_DIR="$2"
       shift 2
       ;;
+    --codebase)
+      if [[ -z "${2:-}" ]]; then
+        echo "❌ Error: --codebase requires a path to a project directory" >&2
+        exit 1
+      fi
+      CODEBASE_PATH="$(cd "$2" 2>/dev/null && pwd)" || {
+        echo "❌ Error: --codebase path does not exist: $2" >&2
+        exit 1
+      }
+      shift 2
+      ;;
+    --experiments)
+      EXPERIMENTS_ENABLED="true"
+      shift
+      ;;
     *)
       TOPIC_PARTS+=("$1")
       shift
@@ -130,20 +165,75 @@ if [[ ! -f "$PROMPT_TEMPLATE" ]]; then
   exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# Build applied research block (if --codebase is set)
+# ---------------------------------------------------------------------------
+APPLIED_BLOCK=""
+if [[ -n "$CODEBASE_PATH" ]]; then
+  APPLIED_TEMPLATE="$PLUGIN_ROOT/templates/applied-research-block.md"
+  if [[ -f "$APPLIED_TEMPLATE" ]]; then
+    APPLIED_BLOCK=$(sed \
+      -e "s|{{CODEBASE_PATH}}|$CODEBASE_PATH|g" \
+      -e "s|{{OUTPUT_DIR}}|$OUTPUT_DIR|g" \
+      -e "s|{{PLUGIN_ROOT}}|$PLUGIN_ROOT|g" \
+      "$APPLIED_TEMPLATE")
+  else
+    echo "⚠️  Warning: Applied research template not found at $APPLIED_TEMPLATE" >&2
+    echo "   Continuing in standard survey mode." >&2
+    CODEBASE_PATH=""
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# Build experimentation block (if --experiments is set)
+# ---------------------------------------------------------------------------
+EXPERIMENTATION_BLOCK=""
+if [[ -n "$EXPERIMENTS_ENABLED" ]]; then
+  EXPERIMENTATION_TEMPLATE="$PLUGIN_ROOT/templates/experimentation-block.md"
+  if [[ -f "$EXPERIMENTATION_TEMPLATE" ]]; then
+    EXPERIMENTATION_BLOCK=$(sed \
+      -e "s|{{OUTPUT_DIR}}|$OUTPUT_DIR|g" \
+      -e "s|{{PLUGIN_ROOT}}|$PLUGIN_ROOT|g" \
+      "$EXPERIMENTATION_TEMPLATE")
+  else
+    echo "⚠️  Warning: Experimentation template not found at $EXPERIMENTATION_TEMPLATE" >&2
+    echo "   Continuing without experiments." >&2
+    EXPERIMENTS_ENABLED=""
+  fi
+fi
+
 # Replace placeholders in template
+# First pass: replace simple placeholders with sed
 RESEARCH_PROMPT=$(sed \
   -e "s|{{TOPIC}}|$TOPIC|g" \
   -e "s|{{OUTPUT_DIR}}|$OUTPUT_DIR|g" \
   -e "s|{{MIN_PAPERS}}|$MIN_PAPERS|g" \
   -e "s|{{COMPLETION_PROMISE}}|$COMPLETION_PROMISE|g" \
   -e "s|{{PLUGIN_ROOT}}|$PLUGIN_ROOT|g" \
+  -e "s|{{CODEBASE_PATH}}|$CODEBASE_PATH|g" \
   "$PROMPT_TEMPLATE")
+
+# Second pass: replace multi-line blocks (sed can't handle these)
+RESEARCH_PROMPT=$(python3 -c "
+import sys
+prompt = sys.stdin.read()
+applied = '''$APPLIED_BLOCK'''
+experiments = '''$EXPERIMENTATION_BLOCK'''
+prompt = prompt.replace('{{APPLIED_RESEARCH_BLOCK}}', applied)
+prompt = prompt.replace('{{EXPERIMENTATION_BLOCK}}', experiments)
+print(prompt)
+" <<< "$RESEARCH_PROMPT")
 
 # ---------------------------------------------------------------------------
 # Create output directory structure
 # ---------------------------------------------------------------------------
 mkdir -p "$OUTPUT_DIR/state/analyses"
 mkdir -p "$OUTPUT_DIR/state/meetings"
+mkdir -p "$OUTPUT_DIR/state/evidence"
+mkdir -p "$OUTPUT_DIR/figures"
+if [[ -n "$EXPERIMENTS_ENABLED" ]]; then
+  mkdir -p "$OUTPUT_DIR/experiments/results"
+fi
 
 # Initialize empty candidates and shortlist if they don't exist
 if [[ ! -f "$OUTPUT_DIR/state/candidates.json" ]]; then
@@ -188,6 +278,7 @@ min_papers: $MIN_PAPERS
 papers_found: 0
 papers_screened: 0
 papers_analyzed: 0
+experiments_enabled: ${EXPERIMENTS_ENABLED:-false}
 ---
 
 $RESEARCH_PROMPT
@@ -196,23 +287,45 @@ EOF
 # ---------------------------------------------------------------------------
 # Output setup message
 # ---------------------------------------------------------------------------
+MODE_LABEL="Literature Survey"
+CODEBASE_LINE=""
+PHASE1_EXTRA=""
+PHASE4_EXTRA=""
+PHASE5_EXTRA=""
+
+if [[ -n "$CODEBASE_PATH" ]]; then
+  MODE_LABEL="APPLIED RESEARCH (codebase-aware)"
+  CODEBASE_LINE="Codebase: $CODEBASE_PATH"
+  PHASE1_EXTRA=" + codebase analysis"
+  PHASE4_EXTRA=" + gap analysis"
+  PHASE5_EXTRA=" + implementation recs"
+fi
+
+if [[ -n "$EXPERIMENTS_ENABLED" ]]; then
+  MODE_LABEL="${MODE_LABEL} + EXPERIMENTS"
+  PHASE4_EXTRA="${PHASE4_EXTRA} + run experiments"
+  PHASE5_EXTRA="${PHASE5_EXTRA} + empirical results"
+fi
+
 cat <<EOF
 📚 Academic Research Loop activated!
 
+Mode: $MODE_LABEL
 Topic: $TOPIC
-Output: $OUTPUT_DIR/
+${CODEBASE_LINE:+$CODEBASE_LINE
+}Output: $OUTPUT_DIR/
 Max iterations: $MAX_ITERATIONS
 Min papers: $MIN_PAPERS
 Completion promise: $COMPLETION_PROMISE
 
 Pipeline phases:
-  1. Discovery   — Search Arxiv + Semantic Scholar
+  1. Discovery   — Search Arxiv + Semantic Scholar${PHASE1_EXTRA}
   2. Screening   — Score and filter candidates
   3. Analysis    — Deep-read shortlisted papers
-  4. Synthesis   — Identify themes and gaps
-  5. Writing     — Draft paper with citations
+  4. Synthesis   — Identify themes and gaps${PHASE4_EXTRA}
+  5. Writing     — Draft paper with citations${PHASE5_EXTRA}
   6. Review      — Academic peer-review
-  7. Polish      — Final formatting + bibliography
+  7. Polish      — Figures, cross-validation, LaTeX export
 
 State: .claude/research-loop.local.md
 Monitor: grep 'current_phase\|global_iteration\|papers_' .claude/research-loop.local.md

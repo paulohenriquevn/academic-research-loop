@@ -214,6 +214,24 @@ def cmd_generate_key(args: argparse.Namespace) -> None:
     print(key)
 
 
+def sync_bibtex_key_to_db(db_path: str, paper_id: str, bibtex_key: str) -> None:
+    """Update a paper's bibtex_key in the SQLite database.
+
+    This ensures the database stays in sync with references.bib,
+    which is critical for the fact-checking pipeline.
+    """
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute(
+        "UPDATE papers SET bibtex_key = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (bibtex_key, paper_id),
+    )
+    conn.commit()
+    conn.close()
+
+
 def cmd_add(args: argparse.Namespace) -> None:
     """Handle add subcommand."""
     paper = json.loads(args.paper_json)
@@ -225,6 +243,10 @@ def cmd_add(args: argparse.Namespace) -> None:
     dup_key = is_duplicate(paper, existing)
     if dup_key:
         result = {"status": "duplicate", "existing_key": dup_key}
+        # Even for duplicates, sync the key to DB if requested
+        if args.db_path and args.paper_id:
+            sync_bibtex_key_to_db(args.db_path, args.paper_id, dup_key)
+            result["synced_to_db"] = True
         json.dump(result, sys.stdout, indent=2)
         print()
         return
@@ -250,7 +272,11 @@ def cmd_add(args: argparse.Namespace) -> None:
     with path.open("a", encoding="utf-8") as f:
         f.write(f"\n{entry}\n")
 
-    result = {"status": "added", "key": key}
+    # Sync bibtex_key to database if DB path provided
+    if args.db_path and args.paper_id:
+        sync_bibtex_key_to_db(args.db_path, args.paper_id, key)
+
+    result = {"status": "added", "key": key, "synced_to_db": bool(args.db_path)}
     json.dump(result, sys.stdout, indent=2)
     print()
 
@@ -307,6 +333,71 @@ def cmd_validate(args: argparse.Namespace) -> None:
     print()
 
 
+def cmd_sync_db(args: argparse.Namespace) -> None:
+    """Sync bibtex_keys from .bib file into the SQLite papers table.
+
+    Matches entries by arxiv ID or DOI. Fixes the critical gap where
+    bibtex_key is NULL in the database despite existing in references.bib.
+    """
+    import sqlite3
+
+    entries = parse_bib_file(args.bib_file)
+    if not entries:
+        json.dump({"status": "error", "message": "no entries in bib file"}, sys.stdout, indent=2)
+        print()
+        return
+
+    conn = sqlite3.connect(args.db_path)
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.row_factory = sqlite3.Row
+
+    synced = 0
+    skipped = 0
+    not_found = []
+
+    for key, entry_text in entries.items():
+        doi, arxiv_id = extract_ids_from_entry(entry_text)
+
+        paper_id = None
+        if arxiv_id:
+            row = conn.execute(
+                "SELECT id FROM papers WHERE external_ids LIKE ?",
+                (f'%"arxiv": "{arxiv_id}"%',),
+            ).fetchone()
+            if row:
+                paper_id = row["id"]
+
+        if not paper_id and doi:
+            row = conn.execute(
+                "SELECT id FROM papers WHERE external_ids LIKE ?",
+                (f'%"doi": "{doi}"%',),
+            ).fetchone()
+            if row:
+                paper_id = row["id"]
+
+        if paper_id:
+            conn.execute(
+                "UPDATE papers SET bibtex_key = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (key, paper_id),
+            )
+            synced += 1
+        else:
+            not_found.append({"key": key, "arxiv": arxiv_id, "doi": doi})
+            skipped += 1
+
+    conn.commit()
+    conn.close()
+
+    result = {
+        "status": "synced",
+        "synced": synced,
+        "skipped": skipped,
+        "not_found": not_found,
+    }
+    json.dump(result, sys.stdout, indent=2)
+    print()
+
+
 def cmd_list(args: argparse.Namespace) -> None:
     """Handle list subcommand."""
     entries = parse_bib_file(args.bib_file)
@@ -346,6 +437,10 @@ def main() -> None:
                             help="JSON string of paper object")
     add_parser.add_argument("--bib-file", required=True,
                             help="Path to BibTeX file")
+    add_parser.add_argument("--db-path", default=None,
+                            help="SQLite DB path — sync bibtex_key to papers table")
+    add_parser.add_argument("--paper-id", default=None,
+                            help="Paper ID in DB — required with --db-path")
 
     # validate
     val_parser = subparsers.add_parser("validate",
@@ -353,6 +448,13 @@ def main() -> None:
     val_parser.add_argument("--bib-file", required=True)
     val_parser.add_argument("--draft-file", default=None,
                             help="Path to draft Markdown file for cross-referencing")
+
+    # sync-db
+    sync_parser = subparsers.add_parser("sync-db",
+                                         help="Sync bibtex_keys from .bib file into SQLite DB")
+    sync_parser.add_argument("--bib-file", required=True)
+    sync_parser.add_argument("--db-path", required=True,
+                              help="SQLite database path")
 
     # list
     list_parser = subparsers.add_parser("list", help="List all entries in BibTeX file")
@@ -364,6 +466,7 @@ def main() -> None:
         "generate-key": cmd_generate_key,
         "add": cmd_add,
         "validate": cmd_validate,
+        "sync-db": cmd_sync_db,
         "list": cmd_list,
     }
     commands[args.command](args)

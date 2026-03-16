@@ -89,6 +89,42 @@ Evaluate the draft across these dimensions:
 1. [Prioritized list of changes]
 ```
 
+## Epistemic Rigor Checks (MANDATORY)
+
+You MUST specifically check for and flag:
+
+### 1. Overclaiming
+- Are claims stronger than the evidence supports?
+- Does the paper say "shows" or "demonstrates" for results that are [INFERRED] or [HYPOTHESIZED]?
+- Are estimated/theoretical values presented as if they were benchmarked?
+- Flag every instance where language should be weakened.
+
+### 2. Heterogeneous Comparisons
+- Does any comparison table mix results from different datasets, metrics, or evaluation settings?
+- Are values from different papers being compared as if measured under identical conditions?
+- Flag: "Paper A reports X on Dataset D1; Paper B reports Y on Dataset D2. These are NOT directly comparable."
+
+### 3. Domain Transfer Assumptions
+- When a result from Domain A (e.g., text toxicity) is applied to Domain B (e.g., voice safety), is the transfer assumption made explicit?
+- What could break in the transfer? (e.g., ASR errors, disfluency, prosody loss)
+- Flag every implicit domain transfer.
+
+### 4. Confound Analysis
+- For speculative hypotheses, are confounding variables addressed?
+- Example: if claiming acoustic features can detect adversarial intent, are confounds (accent, emotion, speaking style, disability) discussed?
+- Flag missing confound treatment.
+
+### 5. Genre Consistency
+- Read `methodology.md` for the declared paper genre (survey/position/agenda)
+- Is the entire paper consistent with this genre?
+- A position paper should NOT have benchmark-like comparison tables
+- A survey should NOT have speculative architectural proposals without evidence labels
+
+### 6. Methodology Section
+- Is the search methodology documented? (PRISMA-like flow)
+- Can a reader reproduce the literature search?
+- Are inclusion/exclusion criteria explicit?
+
 ## Guidelines
 
 - Be specific — reference exact sections, paragraphs, or sentences
@@ -96,3 +132,4 @@ Evaluate the draft across these dimensions:
 - Be fair — acknowledge strengths alongside weaknesses
 - Prioritize — distinguish critical issues from nice-to-haves
 - Focus on substance over style (but flag clarity issues)
+- **Treat overclaiming as a CRITICAL issue, not a minor one** — this is the most common failure mode in AI survey papers

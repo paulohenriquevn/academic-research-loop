@@ -12,11 +12,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 from paper_database import (
     add_agent_message,
     add_analysis,
+    add_evidence,
     add_paper,
     add_quality_score,
+    evidence_matrix,
     get_quality_history,
     get_stats,
     init_db,
+    query_evidence,
     query_messages,
     query_papers,
     update_paper,
@@ -315,6 +318,119 @@ class TestStats(unittest.TestCase):
         self.assertEqual(stats["total_quality_scores"], 1)
         self.assertEqual(stats["total_agent_messages"], 1)
         self.assertIn(2, stats["quality_summary"])
+
+
+class TestEvidence(unittest.TestCase):
+    """Tests for evidence extraction and querying."""
+
+    def setUp(self):
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.db_path = self.tmp.name
+        init_db(self.db_path)
+        add_paper(self.db_path, {
+            "id": "paper1", "source": "arxiv", "title": "Paper One",
+            "authors": ["A"], "external_ids": {"arxiv": "1111"},
+            "bibtex_key": "author2024one",
+        })
+        add_paper(self.db_path, {
+            "id": "paper2", "source": "arxiv", "title": "Paper Two",
+            "authors": ["B"], "external_ids": {"arxiv": "2222"},
+            "bibtex_key": "author2024two",
+        })
+
+    def tearDown(self):
+        Path(self.db_path).unlink()
+
+    def test_add_evidence(self):
+        result = add_evidence(self.db_path, "paper1", {
+            "metric": "F1", "value": 0.94, "unit": "score",
+            "dataset": "ToxicChat", "evidence_type": "measured",
+            "source_location": "Table 2",
+        })
+        self.assertEqual(result["status"], "added")
+        self.assertIn("id", result)
+
+    def test_query_evidence_by_paper(self):
+        add_evidence(self.db_path, "paper1", {
+            "metric": "F1", "value": 0.94, "evidence_type": "measured",
+        })
+        add_evidence(self.db_path, "paper2", {
+            "metric": "F1", "value": 0.89, "evidence_type": "measured",
+        })
+        results = query_evidence(self.db_path, paper_id="paper1")
+        self.assertEqual(len(results), 1)
+        self.assertAlmostEqual(results[0]["value"], 0.94)
+
+    def test_query_evidence_by_metric(self):
+        add_evidence(self.db_path, "paper1", {
+            "metric": "F1", "value": 0.94, "evidence_type": "measured",
+        })
+        add_evidence(self.db_path, "paper1", {
+            "metric": "latency_ms", "value": 12.0, "evidence_type": "measured",
+        })
+        results = query_evidence(self.db_path, metric="latency_ms")
+        self.assertEqual(len(results), 1)
+        self.assertAlmostEqual(results[0]["value"], 12.0)
+
+    def test_query_evidence_by_type(self):
+        add_evidence(self.db_path, "paper1", {
+            "metric": "F1", "value": 0.94, "evidence_type": "measured",
+        })
+        add_evidence(self.db_path, "paper1", {
+            "metric": "latency_ms", "value": 5.0, "evidence_type": "hypothesized",
+        })
+        measured = query_evidence(self.db_path, evidence_type="measured")
+        self.assertEqual(len(measured), 1)
+        hypothesized = query_evidence(self.db_path, evidence_type="hypothesized")
+        self.assertEqual(len(hypothesized), 1)
+
+    def test_evidence_with_baseline(self):
+        add_evidence(self.db_path, "paper1", {
+            "metric": "F1", "value": 0.94, "dataset": "ToxicChat",
+            "baseline_name": "Llama Guard 2", "baseline_value": 0.89,
+            "evidence_type": "measured", "source_location": "Table 2",
+        })
+        results = query_evidence(self.db_path, paper_id="paper1")
+        self.assertEqual(results[0]["baseline_name"], "Llama Guard 2")
+        self.assertAlmostEqual(results[0]["baseline_value"], 0.89)
+
+    def test_evidence_matrix_only_measured(self):
+        add_evidence(self.db_path, "paper1", {
+            "metric": "F1", "value": 0.94, "evidence_type": "measured",
+        })
+        add_evidence(self.db_path, "paper2", {
+            "metric": "F1", "value": 0.89, "evidence_type": "measured",
+        })
+        add_evidence(self.db_path, "paper1", {
+            "metric": "F1", "value": 0.97, "evidence_type": "hypothesized",
+        })
+        matrix = evidence_matrix(self.db_path)
+        self.assertEqual(matrix["total_entries"], 2)  # only measured
+        self.assertIn("F1", matrix["matrix"])
+        self.assertEqual(len(matrix["matrix"]["F1"]), 2)
+
+    def test_evidence_matrix_filter_metric(self):
+        add_evidence(self.db_path, "paper1", {
+            "metric": "F1", "value": 0.94, "evidence_type": "measured",
+        })
+        add_evidence(self.db_path, "paper1", {
+            "metric": "latency_ms", "value": 12.0, "evidence_type": "measured",
+        })
+        matrix = evidence_matrix(self.db_path, metric="latency_ms")
+        self.assertEqual(len(matrix["metrics"]), 1)
+        self.assertEqual(matrix["metrics"][0], "latency_ms")
+
+    def test_evidence_in_stats(self):
+        add_evidence(self.db_path, "paper1", {
+            "metric": "F1", "value": 0.94, "evidence_type": "measured",
+        })
+        add_evidence(self.db_path, "paper1", {
+            "metric": "recall", "value": 0.80, "evidence_type": "inferred",
+        })
+        stats = get_stats(self.db_path)
+        self.assertEqual(stats["total_evidence"], 2)
+        self.assertEqual(stats["evidence_by_type"]["measured"], 1)
+        self.assertEqual(stats["evidence_by_type"]["inferred"], 1)
 
 
 if __name__ == "__main__":

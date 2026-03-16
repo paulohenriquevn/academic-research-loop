@@ -8,7 +8,21 @@ Your goal is to produce a complete, well-cited academic survey paper in Markdown
 
 ---
 
-## BEFORE ANYTHING ELSE — Mandatory Group Meeting (Every Iteration)
+## BEFORE ANYTHING ELSE — Project Context + Mandatory Group Meeting
+
+### Step 0: Understand the Project (FIRST ITERATION ONLY)
+
+On the **very first iteration** (global_iteration=1), read the project context before anything else:
+
+1. **Read `CLAUDE.md`** (if it exists in the working directory) — this contains project-specific instructions, architecture decisions, coding standards, and domain context that MUST inform the research direction
+2. **Read `README.md`** (if it exists) — this describes what the project does, its tech stack, goals, and constraints
+3. **Summarize the project context** in the first meeting minutes — the chief researcher must reference this context when making decisions
+
+This ensures the research is grounded in the project's actual needs, not generic topic exploration. If CLAUDE.md specifies hypotheses, sub-questions, or research priorities, these MUST be incorporated into the search strategy.
+
+On subsequent iterations, skip Step 0 — the context is already captured in meeting minutes.
+
+---
 
 **THIS IS NON-NEGOTIABLE.** Every single iteration MUST begin with a group meeting led by the Chief Researcher. No work is done until the meeting is complete and minutes are recorded.
 
@@ -58,9 +72,52 @@ After phase work is complete, each researcher records their findings as agent me
 
 ## Phase 1: Discovery
 
-**Goal:** Find at least {{MIN_PAPERS}} relevant papers across multiple sources.
+**Goal:** Find at least {{MIN_PAPERS}} relevant papers across multiple sources. **Document the search methodology rigorously.**
 
 **Instructions:**
+
+### 1a. Define Search Protocol (MANDATORY — do this FIRST)
+
+Before running any search, document the methodology at `{{OUTPUT_DIR}}/state/methodology.md`:
+
+```markdown
+# Search Methodology
+
+## Research Question
+[Formal statement of the research question]
+
+## Paper Genre
+[Choose ONE: systematic-survey | position-paper | agenda-survey | empirical-paper]
+This choice governs the epistemic standards for the rest of the pipeline.
+
+## Databases Searched
+- ArXiv (via API)
+- Semantic Scholar (via API)
+- [Note any databases NOT searched and why — e.g., ACM DL, IEEE Xplore, PubMed]
+
+## Search Queries
+| # | Query String | Database | Date | Results |
+|---|-------------|----------|------|---------|
+| Q1 | "..." | ArXiv | YYYY-MM-DD | N |
+| Q2 | "..." | S2 | YYYY-MM-DD | N |
+...
+
+## Inclusion Criteria
+- [e.g., Published 2019 or later]
+- [e.g., Addresses [specific aspect] of the topic]
+- [e.g., Contains empirical evaluation OR formal architecture proposal]
+
+## Exclusion Criteria
+- [e.g., Non-English]
+- [e.g., Workshop papers without peer review < 4 pages]
+- [e.g., Pure attack papers without defense component]
+
+## Search Period
+[Start date — End date of search]
+```
+
+### 1b. Execute Searches
+
 1. Formulate 3-5 diverse search queries for the topic "{{TOPIC}}"
 2. Run searches using the Python scripts:
    ```bash
@@ -68,26 +125,27 @@ After phase work is complete, each researcher records their findings as agent me
    python3 {{PLUGIN_ROOT}}/scripts/search_semantic_scholar.py --query "QUERY" --max-results 10
    ```
 3. Vary your queries: use synonyms, related terms, key authors, specific techniques
-4. For each paper found, add it to the database:
+4. **Log every query and result count** in `methodology.md` — this is non-negotiable
+5. For each paper found, add it to the database:
    ```bash
    python3 {{PLUGIN_ROOT}}/scripts/paper_database.py add-paper --db-path {{OUTPUT_DIR}}/research.db --paper-json 'PAPER_JSON'
    ```
-5. Also write to `{{OUTPUT_DIR}}/state/candidates.json` for backward compatibility
-6. Record a discovery summary as an agent message:
+6. Also write to `{{OUTPUT_DIR}}/state/candidates.json` for backward compatibility
+7. Record a discovery summary as an agent message:
    ```bash
    python3 {{PLUGIN_ROOT}}/scripts/paper_database.py add-message --db-path {{OUTPUT_DIR}}/research.db \
      --from-agent discovery --phase 1 --iteration N --message-type finding \
      --content "Found N papers. Search queries used: ..."
    ```
-7. Update paper count: output `<!-- PAPERS_FOUND:N -->`
+8. Update paper count: output `<!-- PAPERS_FOUND:N -->`
 
-**Completion:** When you have >= {{MIN_PAPERS}} unique candidates, output `<!-- PHASE_1_COMPLETE -->`
+**Completion:** When you have >= {{MIN_PAPERS}} unique candidates AND `methodology.md` is complete, output `<!-- PHASE_1_COMPLETE -->`
 
 ---
 
 ## Phase 2: Screening
 
-**Goal:** Score all candidates for relevance and build a shortlist.
+**Goal:** Score all candidates for relevance, build a shortlist, and document the screening funnel.
 
 **Instructions:**
 1. Query candidates from the database:
@@ -95,8 +153,8 @@ After phase work is complete, each researcher records their findings as agent me
    python3 {{PLUGIN_ROOT}}/scripts/paper_database.py query --db-path {{OUTPUT_DIR}}/research.db --status candidate
    ```
 2. For each paper, evaluate relevance to "{{TOPIC}}" on a 1-5 scale:
-   - 5: Directly addresses the core topic
-   - 4: Closely related, provides important context
+   - 5: Directly addresses the core topic with empirical evidence
+   - 4: Closely related, provides important context or architecture
    - 3: Tangentially related, useful background
    - 2: Loosely related, minor relevance
    - 1: Not relevant
@@ -106,10 +164,22 @@ After phase work is complete, each researcher records their findings as agent me
      --paper-id ID --updates-json '{"relevance_score": 4, "relevance_rationale": "...", "status": "shortlisted"}'
    ```
 4. Update `{{OUTPUT_DIR}}/state/shortlist.json` for backward compatibility
-5. **QUALITY GATE:** After screening, launch the quality-evaluator agent to assess screening quality. Output its score:
+5. **Update methodology.md** with the PRISMA-style screening funnel:
+   ```markdown
+   ## Screening Funnel
+   - Total identified: N
+   - Duplicates removed: M
+   - After title/abstract screening: K
+   - After full relevance scoring: J (shortlisted)
+   - Excluded: L (with reasons breakdown)
+     - Not relevant: X
+     - Wrong domain: Y
+     - Insufficient methodology: Z
+   ```
+6. **QUALITY GATE:** After screening, launch the quality-evaluator agent to assess screening quality. Output its score:
    `<!-- QUALITY_SCORE:0.XX -->` `<!-- QUALITY_PASSED:1 -->` (or 0 if failed)
-6. If quality gate passes, output `<!-- PAPERS_SCREENED:N -->` and `<!-- PHASE_2_COMPLETE -->`
-7. If quality gate fails, review feedback and improve rationales in next iteration
+7. If quality gate passes, output `<!-- PAPERS_SCREENED:N -->` and `<!-- PHASE_2_COMPLETE -->`
+8. If quality gate fails, review feedback and improve rationales in next iteration
 
 ---
 
@@ -132,21 +202,37 @@ After phase work is complete, each researcher records their findings as agent me
      --paper-id ID --updates-json '{"full_text": "...", "content_source": "ar5iv"}'
    ```
 4. Create analysis files at `{{OUTPUT_DIR}}/state/analyses/paper_NNN.md` with:
-   - Key Findings, Methodology, Limitations, Relevance, Notable References
+   - Key Findings (**each tagged [MEASURED], [INFERRED], [HYPOTHESIZED], or [ARCHITECTURAL]**)
+   - Quantitative Results table (ONLY directly reported numbers)
+   - Methodology (dataset, metrics, baselines, evaluation setting)
+   - Limitations (author-acknowledged + identified + domain transfer risks + confounds)
+   - Relevance to topic (with transfer assumptions explicit)
+   - Notable References
 5. Store analysis in the database:
    ```bash
    python3 {{PLUGIN_ROOT}}/scripts/paper_database.py add-analysis --db-path {{OUTPUT_DIR}}/research.db \
      --paper-id ID --analysis-json '{"key_findings": [...], "methodology": "...", ...}'
    ```
-6. Generate BibTeX keys and add entries:
+6. Generate BibTeX keys and add entries (with DB sync to prevent NULL bibtex_key):
    ```bash
-   python3 {{PLUGIN_ROOT}}/scripts/manage_citations.py add --paper-json 'JSON' --bib-file {{OUTPUT_DIR}}/references.bib
+   python3 {{PLUGIN_ROOT}}/scripts/manage_citations.py add --paper-json 'JSON' --bib-file {{OUTPUT_DIR}}/references.bib \
+     --db-path {{OUTPUT_DIR}}/research.db --paper-id PAPER_ID
    ```
-7. Record cross-paper observations as agent messages (type: "finding")
-8. **QUALITY GATE:** Launch quality-evaluator. Output score markers.
-9. Update: output `<!-- PAPERS_ANALYZED:N -->`
+7. **EVIDENCE EXTRACTION (MANDATORY):** After each paper is analyzed, launch the **evidence-extractor** agent:
+   - Reads the paper's full text and analysis
+   - Extracts EVERY quantitative result (metrics, baselines, ablations, scaling)
+   - Stores each result in the evidence table:
+     ```bash
+     python3 {{PLUGIN_ROOT}}/scripts/paper_database.py add-evidence --db-path {{OUTPUT_DIR}}/research.db \
+       --paper-id ID --evidence-json '{"metric":"F1","value":0.94,"dataset":"ToxicChat","evidence_type":"measured","source_location":"Table 2"}'
+     ```
+   - Saves evidence summary to `{{OUTPUT_DIR}}/state/evidence/paper_ID.md`
+   - Documents what was NOT measured (experimental gaps)
+8. Record cross-paper observations as agent messages (type: "finding")
+9. **QUALITY GATE:** Launch quality-evaluator. Output score markers.
+10. Update: output `<!-- PAPERS_ANALYZED:N -->`
 
-**Completion:** When all papers analyzed and quality gate passes, output `<!-- PHASE_3_COMPLETE -->`
+**Completion:** When all papers analyzed, evidence extracted, and quality gate passes, output `<!-- PHASE_3_COMPLETE -->`
 
 ---
 
@@ -156,11 +242,31 @@ After phase work is complete, each researcher records their findings as agent me
 
 **Sub-steps (within this phase's iterations):**
 
-### Iteration 1: Synthesis
+### Iteration 1: Synthesis + Structured Corpus Table
 1. Read all analysis files in `{{OUTPUT_DIR}}/state/analyses/`
 2. Read all "finding" type agent messages for cross-paper observations
-3. Identify major themes, consensus, contradictions, gaps, trends
-4. Write synthesis to `{{OUTPUT_DIR}}/synthesis.md`
+3. **Generate the structured corpus table** at `{{OUTPUT_DIR}}/state/corpus_table.md`:
+   ```markdown
+   # Structured Corpus Table
+
+   | Paper | Year | Modality | Method Type | Threat Types | Eval Setting | Measured Latency? | Measured Recall? | Key Metric | Evidence Strength |
+   |-------|------|----------|-------------|-------------|-------------|-------------------|-----------------|------------|-------------------|
+   | [@key] | 2024 | text | classifier | jailbreak | ToxicChat | Yes: 12ms | Yes: 0.94 F1 | F1 | MEASURED |
+   | [@key] | 2025 | voice | architecture | — | design only | No | No | — | ARCHITECTURAL |
+   ```
+   This table is REQUIRED in the final paper. It ensures readers can assess evidence quality at a glance.
+4. **Build the cross-paper evidence matrix** from the evidence database:
+   ```bash
+   python3 {{PLUGIN_ROOT}}/scripts/paper_database.py evidence-matrix --db-path {{OUTPUT_DIR}}/research.db
+   ```
+   Save as `{{OUTPUT_DIR}}/state/evidence_matrix.md`. This matrix shows ONLY measured values, organized by metric × system. It is the quantitative backbone of the paper.
+5. **Identify experimental gaps**: from the evidence-extractor's "What Was NOT Measured" sections, compile a list of missing experiments that would strengthen the field's evidence base.
+6. Identify major themes, consensus, contradictions, gaps, trends
+5. **In the synthesis, explicitly classify each cross-paper claim:**
+   - "X outperforms Y" → only if both are [MEASURED] on the same benchmark
+   - "X likely outperforms Y" → if [INFERRED] from different benchmarks
+   - "X may outperform Y" → if [HYPOTHESIZED] from architectural reasoning
+6. Write synthesis to `{{OUTPUT_DIR}}/synthesis.md`
 
 ### Iteration 2: Collaborative Outline
 1. Launch the **outline-architect** agent to propose survey structure
@@ -247,30 +353,116 @@ After phase work is complete, each researcher records their findings as agent me
 
 ---
 
-## Phase 7: Polish
+## Phase 7: Polish, Figures, Validation & Export
 
-**Goal:** Final quality pass — formatting, abstract refinement, bibliography check.
+**Goal:** Produce MIT-submission-ready output: figures, cross-validation, LaTeX export, final polish.
 
-**Instructions:**
+**This phase uses the Autoresearch pattern: agents write scripts → execute → evaluate → iterate.**
+
+### Step 1: Sync Database Integrity
+
+Before anything else, ensure bibtex_key is populated for all shortlisted papers:
+```bash
+python3 {{PLUGIN_ROOT}}/scripts/manage_citations.py sync-db \
+  --bib-file {{OUTPUT_DIR}}/references.bib --db-path {{OUTPUT_DIR}}/research.db
+```
+If any papers are not synced, manually update them via `update-paper`.
+
+### Step 2: Generate Figures (Autoresearch Pattern)
+
+Launch the **figure-generator** agent. This agent:
+1. Reads all analyses and the draft
+2. Decides what figures are needed (minimum: timeline, performance comparison, taxonomy)
+3. **Writes Python scripts** that generate SVG figures using `svg_utils.py`
+4. Executes the scripts, evaluates output, iterates until publication-quality
+5. Updates the draft with `![Figure N: Caption](figures/figure_N.svg)` references
+
+Required figures for MIT-level quality:
+- `figure_1_timeline.svg` — Paper evolution timeline (2020→2025)
+- `figure_2_performance.svg` — Benchmark comparison bar chart
+- `figure_3_taxonomy.svg` — Architecture taxonomy grid
+
+### Step 3: Cross-Validation (Autoresearch Pattern)
+
+Launch the **cross-validator** agent. This agent:
+1. **Writes a Python validation script** at `{{OUTPUT_DIR}}/validate_output.py`
+2. Executes it and produces a JSON report
+3. Checks: bibtex_key integrity, citation coverage, word count vs outline, figure refs, meeting minutes, quality dimensions, deliverable manifest
+4. For auto-fixable issues, writes and executes fix scripts
+5. Re-validates until all critical issues pass
+
+Critical checks that MUST pass:
+- Zero NULL bibtex_keys in shortlisted papers
+- Every `[@key]` in draft exists in `.bib`
+- Every figure reference has a corresponding SVG file
+- All 10 sections present in the final paper
+
+### Step 4: Polish the Paper
+
 1. Read `{{OUTPUT_DIR}}/draft.md`
 2. Polish:
-   - Refine the abstract to accurately summarize final content
+   - Refine abstract to accurately summarize final content
+   - Add self-limitations paragraph to the Conclusion (scope constraints, selection criteria, language bias)
    - Ensure consistent formatting throughout
-   - Verify all citations resolve correctly
-   - Add word count and paper statistics
    - Check grammar and readability
+   - Verify word count per section against outline targets
 3. Write the final version to `{{OUTPUT_DIR}}/final.md`
-4. Run final citation validation:
-   ```bash
-   python3 {{PLUGIN_ROOT}}/scripts/manage_citations.py validate \
-     --bib-file {{OUTPUT_DIR}}/references.bib --draft-file {{OUTPUT_DIR}}/final.md
-   ```
-5. Generate final database stats:
-   ```bash
-   python3 {{PLUGIN_ROOT}}/scripts/paper_database.py stats --db-path {{OUTPUT_DIR}}/research.db
-   ```
 
-**Completion:** When the paper is genuinely complete, output `<promise>{{COMPLETION_PROMISE}}</promise>`
+### Step 5: LaTeX Export (Autoresearch Pattern)
+
+Launch the **latex-exporter** agent. This agent:
+1. **Writes a Python converter script** at `{{OUTPUT_DIR}}/export_latex.py`
+2. Converts `final.md` → `final.tex` with proper academic LaTeX
+3. Handles: `[@key]`→`\citep{key}`, Markdown tables→`booktabs`, figures→`\includegraphics`
+4. Validates the `.tex` output (no remaining Markdown syntax, proper structure)
+5. Iterates until the `.tex` is submission-ready
+
+### Step 6: Final Validation
+
+Run final checks:
+```bash
+python3 {{PLUGIN_ROOT}}/scripts/manage_citations.py validate \
+  --bib-file {{OUTPUT_DIR}}/references.bib --draft-file {{OUTPUT_DIR}}/final.md
+
+python3 {{PLUGIN_ROOT}}/scripts/fact_check.py check \
+  --draft-file {{OUTPUT_DIR}}/final.md --db-path {{OUTPUT_DIR}}/research.db \
+  --bib-file {{OUTPUT_DIR}}/references.bib
+
+python3 {{PLUGIN_ROOT}}/scripts/paper_database.py stats --db-path {{OUTPUT_DIR}}/research.db
+```
+
+### Step 7: Deliverable Manifest
+
+Verify all output files exist:
+```
+{{OUTPUT_DIR}}/
+├── final.md              ← Complete survey in Markdown
+├── final.tex             ← LaTeX version (submission-ready)
+├── references.bib        ← Complete BibTeX bibliography
+├── research.db           ← SQLite database (source of truth)
+├── synthesis.md          ← Cross-paper synthesis
+├── figures/
+│   ├── figure_1_*.svg    ← Timeline figure
+│   ├── figure_2_*.svg    ← Performance comparison
+│   ├── figure_3_*.svg    ← Taxonomy grid
+│   └── gen_figure_*.py   ← Scripts that generated each figure
+├── state/
+│   ├── outline.md
+│   ├── shortlist.json
+│   ├── validation_report.json  ← Cross-validation results
+│   ├── analyses/
+│   └── meetings/
+└── export_latex.py       ← Script that generated .tex
+```
+
+**Completion:** When ALL of the following are true:
+- Figures generated and referenced in paper
+- Cross-validation passes (zero critical issues)
+- LaTeX export complete and valid
+- Final.md polished with limitations section
+- Deliverable manifest verified
+
+Output `<promise>{{COMPLETION_PROMISE}}</promise>`
 
 ---
 
@@ -289,12 +481,19 @@ python3 {{PLUGIN_ROOT}}/scripts/fetch_paper_content.py --arxiv-id ID [--semantic
 
 ### Database
 ```bash
-python3 {{PLUGIN_ROOT}}/scripts/paper_database.py init|add-paper|update-paper|add-analysis|query|stats|add-message|query-messages|add-quality-score|quality-history --db-path {{OUTPUT_DIR}}/research.db
+python3 {{PLUGIN_ROOT}}/scripts/paper_database.py init|add-paper|update-paper|add-analysis|add-evidence|query|query-evidence|evidence-matrix|stats|add-message|query-messages|add-quality-score|quality-history --db-path {{OUTPUT_DIR}}/research.db
 ```
 
 ### Citations
 ```bash
-python3 {{PLUGIN_ROOT}}/scripts/manage_citations.py add|validate|list|generate-key --bib-file {{OUTPUT_DIR}}/references.bib
+python3 {{PLUGIN_ROOT}}/scripts/manage_citations.py add|validate|list|generate-key|sync-db --bib-file {{OUTPUT_DIR}}/references.bib [--db-path {{OUTPUT_DIR}}/research.db]
+```
+
+### Figures (Phase 7)
+```bash
+# SVG utility library for figure-generator agent:
+# {{PLUGIN_ROOT}}/scripts/svg_utils.py
+# Agents write scripts that import svg_utils and generate SVGs
 ```
 
 ### Fact-Checking
@@ -339,9 +538,13 @@ Always record your key outputs as messages for downstream agents.
 | **Theory Specialist** | `researcher-theory` | Theoretical frameworks, formal analysis, conceptual contributions |
 | **Applications Specialist** | `researcher-applications` | Real-world impact, use cases, deployment, industry adoption |
 
-Additional specialists are available for specific tasks: `paper-screener`, `paper-analyzer`, `synthesis-writer`, `outline-architect`, `outline-critic`, `writing-instructor`, `section-writer`, `quality-evaluator`, `fact-checker`, `academic-reviewer`.
+Additional specialists are available for specific tasks: `paper-screener`, `paper-analyzer`, `evidence-extractor`, `synthesis-writer`, `outline-architect`, `outline-critic`, `writing-instructor`, `section-writer`, `quality-evaluator`, `fact-checker`, `academic-reviewer`, `figure-generator`, `cross-validator`, `latex-exporter`.
 
 ---
+
+{{APPLIED_RESEARCH_BLOCK}}
+
+{{EXPERIMENTATION_BLOCK}}
 
 ## Rules
 

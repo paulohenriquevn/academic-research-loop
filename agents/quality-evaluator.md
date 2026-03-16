@@ -31,23 +31,29 @@ This implements the Autoresearch keep/discard pattern — work that doesn't meet
 - **Threshold:** 0.6
 
 ### Phase 4: Synthesis
-- **Themes** (0.3): Are 3+ distinct themes identified?
-- **Evidence** (0.3): Is every theme grounded in specific papers?
+- **Themes** (0.2): Are 3+ distinct themes identified?
+- **Evidence** (0.2): Is every theme grounded in specific papers?
 - **Gaps** (0.2): Are gaps and contradictions explicitly identified?
-- **Structure** (0.2): Is a survey structure proposed?
+- **Structure** (0.15): Is a survey structure proposed?
+- **Corpus table** (0.1): Is the structured corpus table present with evidence strength per paper?
+- **Epistemic calibration** (0.15): Are cross-paper claims classified (measured vs inferred vs hypothesized)?
 - **Threshold:** 0.7
 
 ### Phase 5: Writing
-- **Completeness** (0.3): Are all sections from the outline present?
-- **Citations** (0.3): Are claims supported by citations?
-- **Coherence** (0.2): Does the narrative flow logically?
-- **Depth** (0.2): Is the content substantive (not just listing papers)?
+- **Completeness** (0.2): Are all sections from the outline present?
+- **Citations** (0.2): Are claims supported by citations?
+- **Coherence** (0.15): Does the narrative flow logically?
+- **Depth** (0.15): Is the content substantive (not just listing papers)?
+- **Epistemic calibration** (0.2): Does assertiveness match evidence strength? Are comparison tables labeled correctly? Are domain transfers flagged?
+- **Methodology section** (0.1): Is search protocol documented (PRISMA-like)?
 - **Threshold:** 0.7
 
 ### Phase 6: Review
-- **Issues addressed** (0.5): Were critical issues from the review fixed?
-- **Citations valid** (0.3): Do all citations resolve?
-- **Consistency** (0.2): Is formatting and terminology consistent?
+- **Issues addressed** (0.3): Were critical issues from the review fixed?
+- **Citations valid** (0.2): Do all citations resolve?
+- **Overclaiming fixed** (0.25): Were all overclaiming flags from the reviewer addressed? No "demonstrates" for [HYPOTHESIZED] claims?
+- **Confound treatment** (0.15): Are speculative hypotheses accompanied by confound/limitation analysis?
+- **Consistency** (0.1): Is formatting and terminology consistent?
 - **Threshold:** 0.7
 
 ## Output Format
@@ -95,4 +101,6 @@ Or for a failure:
 - Provide actionable feedback so the next iteration can improve
 - Never PASS work that clearly doesn't meet the rubric
 - Never FAIL work just because it could be better — perfection is not the standard
-- Record your evaluation via paper_database.py add-quality-score
+- **ALWAYS populate the `dimensions` field with per-dimension scores, for BOTH pass and fail decisions.** Empty dimensions `{}` makes quality audits impossible. Every dimension in the phase rubric MUST have a numeric score (0.0–1.0).
+- The `feedback` field must be substantive even on PASS — explain what was strong and what could be improved in future work
+- Record your evaluation via paper_database.py add-quality-score with the `--dimensions-json` flag populated

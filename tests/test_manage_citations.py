@@ -20,6 +20,8 @@ from manage_citations import (
     is_duplicate,
     normalize_ascii,
     parse_bib_file,
+    sync_bibtex_key_to_db,
+    cmd_sync_db,
 )
 
 
@@ -262,6 +264,142 @@ class TestIsDuplicate(unittest.TestCase):
         existing = {"smith2024": "@article{smith2024,\n  doi = {10.1234},\n}"}
         result = is_duplicate(paper, existing)
         self.assertIsNone(result)
+
+
+class TestSyncBibtexKeyToDb(unittest.TestCase):
+    """Tests for the bibtex_key sync mechanism."""
+
+    def _make_db(self):
+        """Create a temp DB with one paper."""
+        import sqlite3
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        conn = sqlite3.connect(tmp.name)
+        conn.executescript("""
+            CREATE TABLE papers (
+                id TEXT PRIMARY KEY,
+                bibtex_key TEXT,
+                external_ids TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'candidate',
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            INSERT INTO papers (id, external_ids, status)
+            VALUES ('2004.04906', '{"arxiv": "2004.04906"}', 'shortlisted');
+        """)
+        conn.commit()
+        conn.close()
+        return tmp.name
+
+    def test_sync_sets_bibtex_key(self):
+        import sqlite3
+        db_path = self._make_db()
+        sync_bibtex_key_to_db(db_path, "2004.04906", "karpukhin2020dense")
+        conn = sqlite3.connect(db_path)
+        row = conn.execute("SELECT bibtex_key FROM papers WHERE id='2004.04906'").fetchone()
+        conn.close()
+        self.assertEqual(row[0], "karpukhin2020dense")
+        Path(db_path).unlink()
+
+    def test_sync_updates_nonexistent_paper_silently(self):
+        db_path = self._make_db()
+        # Should not raise — just updates 0 rows
+        sync_bibtex_key_to_db(db_path, "nonexistent", "key")
+        Path(db_path).unlink()
+
+
+class TestCmdSyncDb(unittest.TestCase):
+    """Tests for the sync-db CLI command."""
+
+    def _make_db_and_bib(self):
+        import sqlite3
+        # DB with paper that has NULL bibtex_key
+        db_tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        conn = sqlite3.connect(db_tmp.name)
+        conn.executescript("""
+            CREATE TABLE papers (
+                id TEXT PRIMARY KEY,
+                bibtex_key TEXT,
+                external_ids TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'candidate',
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            INSERT INTO papers (id, external_ids, status)
+            VALUES ('2004.04906', '{"arxiv": "2004.04906"}', 'shortlisted');
+            INSERT INTO papers (id, external_ids, status)
+            VALUES ('2002.08909', '{"arxiv": "2002.08909"}', 'shortlisted');
+        """)
+        conn.commit()
+        conn.close()
+
+        # Bib file with matching entries
+        bib_tmp = tempfile.NamedTemporaryFile(suffix=".bib", delete=False, mode="w")
+        bib_tmp.write("""
+@inproceedings{karpukhin2020dense,
+  title = {Dense Passage Retrieval},
+  author = {Karpukhin, Vladimir},
+  year = {2020},
+  eprint = {2004.04906},
+  archiveprefix = {arXiv},
+}
+
+@inproceedings{guu2020realm,
+  title = {REALM},
+  author = {Guu, Kelvin},
+  year = {2020},
+  eprint = {2002.08909},
+  archiveprefix = {arXiv},
+}
+""")
+        bib_tmp.close()
+        return db_tmp.name, bib_tmp.name
+
+    def test_sync_db_populates_keys(self):
+        import sqlite3
+        import argparse
+        db_path, bib_path = self._make_db_and_bib()
+
+        args = argparse.Namespace(bib_file=bib_path, db_path=db_path)
+        # Capture stdout
+        import io
+        old_stdout = sys.stdout
+        sys.stdout = io.StringIO()
+        cmd_sync_db(args)
+        output = sys.stdout.getvalue()
+        sys.stdout = old_stdout
+
+        result = json.loads(output.strip())
+        self.assertEqual(result["status"], "synced")
+        self.assertEqual(result["synced"], 2)
+
+        # Verify in DB
+        conn = sqlite3.connect(db_path)
+        rows = conn.execute("SELECT id, bibtex_key FROM papers ORDER BY id").fetchall()
+        conn.close()
+        keys = {r[0]: r[1] for r in rows}
+        self.assertEqual(keys["2002.08909"], "guu2020realm")
+        self.assertEqual(keys["2004.04906"], "karpukhin2020dense")
+
+        Path(db_path).unlink()
+        Path(bib_path).unlink()
+
+    def test_sync_db_empty_bib(self):
+        import argparse
+        import io
+        db_path, bib_path = self._make_db_and_bib()
+        # Overwrite bib with empty
+        Path(bib_path).write_text("")
+
+        args = argparse.Namespace(bib_file=bib_path, db_path=db_path)
+        old_stdout = sys.stdout
+        sys.stdout = io.StringIO()
+        cmd_sync_db(args)
+        output = sys.stdout.getvalue()
+        sys.stdout = old_stdout
+
+        result = json.loads(output.strip())
+        self.assertEqual(result["status"], "error")
+
+        Path(db_path).unlink()
+        Path(bib_path).unlink()
 
 
 if __name__ == "__main__":

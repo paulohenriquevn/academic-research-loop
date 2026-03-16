@@ -21,7 +21,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -91,12 +91,30 @@ CREATE TABLE IF NOT EXISTS agent_messages (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS evidence (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    paper_id TEXT NOT NULL REFERENCES papers(id),
+    metric TEXT NOT NULL,              -- e.g. "F1", "recall", "latency_ms", "EM"
+    value REAL NOT NULL,               -- numeric value
+    unit TEXT,                         -- e.g. "ms", "%", "score"
+    dataset TEXT,                      -- e.g. "ToxicChat", "HotpotQA"
+    baseline_name TEXT,                -- what was compared against
+    baseline_value REAL,               -- baseline numeric value
+    conditions TEXT,                   -- e.g. "T5-large, 100 passages, English"
+    evidence_type TEXT NOT NULL DEFAULT 'measured',  -- measured/inferred/hypothesized
+    source_location TEXT,              -- e.g. "Table 2", "Figure 3", "Section 4.2"
+    notes TEXT,                        -- any caveats or context
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_papers_status ON papers(status);
 CREATE INDEX IF NOT EXISTS idx_papers_relevance ON papers(relevance_score);
 CREATE INDEX IF NOT EXISTS idx_analyses_paper_id ON analyses(paper_id);
 CREATE INDEX IF NOT EXISTS idx_quality_phase ON quality_scores(phase);
 CREATE INDEX IF NOT EXISTS idx_messages_phase ON agent_messages(phase);
 CREATE INDEX IF NOT EXISTS idx_messages_type ON agent_messages(message_type);
+CREATE INDEX IF NOT EXISTS idx_evidence_paper ON evidence(paper_id);
+CREATE INDEX IF NOT EXISTS idx_evidence_metric ON evidence(metric);
 """
 
 
@@ -327,6 +345,91 @@ def query_messages(db_path: str, phase: int | None = None,
     return [dict(row) for row in rows]
 
 
+def add_evidence(db_path: str, paper_id: str, evidence: dict) -> dict:
+    """Add a quantitative evidence entry for a paper."""
+    conn = get_connection(db_path)
+    conn.execute(
+        """INSERT INTO evidence
+           (paper_id, metric, value, unit, dataset, baseline_name, baseline_value,
+            conditions, evidence_type, source_location, notes)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            paper_id,
+            evidence.get("metric", ""),
+            evidence.get("value", 0),
+            evidence.get("unit"),
+            evidence.get("dataset"),
+            evidence.get("baseline_name"),
+            evidence.get("baseline_value"),
+            evidence.get("conditions"),
+            evidence.get("evidence_type", "measured"),
+            evidence.get("source_location"),
+            evidence.get("notes"),
+        ),
+    )
+    conn.commit()
+    eid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.close()
+    return {"status": "added", "id": eid, "paper_id": paper_id}
+
+
+def query_evidence(db_path: str, paper_id: str | None = None,
+                   metric: str | None = None,
+                   evidence_type: str | None = None) -> list[dict]:
+    """Query evidence entries with optional filters."""
+    conn = get_connection(db_path)
+    query = """SELECT e.*, p.bibtex_key, p.title as paper_title
+               FROM evidence e JOIN papers p ON e.paper_id = p.id WHERE 1=1"""
+    params: list = []
+    if paper_id:
+        query += " AND e.paper_id = ?"
+        params.append(paper_id)
+    if metric:
+        query += " AND e.metric = ?"
+        params.append(metric)
+    if evidence_type:
+        query += " AND e.evidence_type = ?"
+        params.append(evidence_type)
+    query += " ORDER BY e.metric, e.paper_id"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def evidence_matrix(db_path: str, metric: str | None = None) -> dict:
+    """Build a cross-paper evidence matrix.
+
+    Returns a matrix structure: {metric: [{paper, value, dataset, baseline, ...}]}
+    Only includes MEASURED evidence by default.
+    """
+    conn = get_connection(db_path)
+    query = """SELECT e.*, p.bibtex_key, p.title as paper_title
+               FROM evidence e JOIN papers p ON e.paper_id = p.id
+               WHERE e.evidence_type = 'measured'"""
+    params: list = []
+    if metric:
+        query += " AND e.metric = ?"
+        params.append(metric)
+    query += " ORDER BY e.metric, e.value DESC"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+
+    matrix: dict[str, list[dict]] = {}
+    for row in rows:
+        d = dict(row)
+        m = d["metric"]
+        if m not in matrix:
+            matrix[m] = []
+        matrix[m].append(d)
+
+    return {
+        "status": "ok",
+        "metrics": list(matrix.keys()),
+        "total_entries": sum(len(v) for v in matrix.values()),
+        "matrix": matrix,
+    }
+
+
 def get_quality_history(db_path: str, phase: int | None = None) -> list[dict]:
     """Get quality score history, optionally filtered by phase."""
     conn = get_connection(db_path)
@@ -356,6 +459,10 @@ def get_stats(db_path: str) -> dict:
     stats["total_analyses"] = conn.execute("SELECT COUNT(*) FROM analyses").fetchone()[0]
     stats["total_quality_scores"] = conn.execute("SELECT COUNT(*) FROM quality_scores").fetchone()[0]
     stats["total_agent_messages"] = conn.execute("SELECT COUNT(*) FROM agent_messages").fetchone()[0]
+    stats["total_evidence"] = conn.execute("SELECT COUNT(*) FROM evidence").fetchone()[0]
+    stats["evidence_by_type"] = {}
+    for row in conn.execute("SELECT evidence_type, COUNT(*) as cnt FROM evidence GROUP BY evidence_type"):
+        stats["evidence_by_type"][row["evidence_type"]] = row["cnt"]
 
     # Quality scores summary
     stats["quality_summary"] = {}
@@ -447,6 +554,27 @@ def main() -> None:
     qm.add_argument("--to-agent", default=None)
     qm.add_argument("--message-type", default=None)
 
+    # add-evidence
+    ae = subparsers.add_parser("add-evidence", help="Add quantitative evidence entry")
+    ae.add_argument("--db-path", required=True)
+    ae.add_argument("--paper-id", required=True)
+    ae.add_argument("--evidence-json", required=True,
+                    help='JSON: {"metric":"F1","value":0.94,"dataset":"ToxicChat","evidence_type":"measured",...}')
+
+    # query-evidence
+    qe = subparsers.add_parser("query-evidence", help="Query evidence entries")
+    qe.add_argument("--db-path", required=True)
+    qe.add_argument("--paper-id", default=None)
+    qe.add_argument("--metric", default=None)
+    qe.add_argument("--evidence-type", default=None,
+                    choices=["measured", "inferred", "hypothesized"])
+
+    # evidence-matrix
+    em = subparsers.add_parser("evidence-matrix",
+                                help="Build cross-paper evidence matrix (measured only)")
+    em.add_argument("--db-path", required=True)
+    em.add_argument("--metric", default=None, help="Filter by specific metric")
+
     # quality-history
     qh = subparsers.add_parser("quality-history", help="Get quality scores")
     qh.add_argument("--db-path", required=True)
@@ -503,6 +631,18 @@ def main() -> None:
     elif args.command == "query-messages":
         messages = query_messages(args.db_path, args.phase, args.to_agent, args.message_type)
         json.dump(messages, sys.stdout, indent=2)
+
+    elif args.command == "add-evidence":
+        result = add_evidence(args.db_path, args.paper_id, json.loads(args.evidence_json))
+        json.dump(result, sys.stdout, indent=2)
+
+    elif args.command == "query-evidence":
+        results = query_evidence(args.db_path, args.paper_id, args.metric, args.evidence_type)
+        json.dump(results, sys.stdout, indent=2)
+
+    elif args.command == "evidence-matrix":
+        matrix = evidence_matrix(args.db_path, args.metric)
+        json.dump(matrix, sys.stdout, indent=2)
 
     elif args.command == "quality-history":
         history = get_quality_history(args.db_path, args.phase)
