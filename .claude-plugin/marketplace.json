@@ -11,7 +11,10 @@
     {
       "name": "academic-research-loop",
       "description": "Autonomous academic research pipeline with 7-phase pipeline, 14 specialized agents, quality gates, fact-checking, and inter-agent communication. Give it a topic, walk away, come back to a complete literature survey.",
-      "source": ".",
+      "source": {
+        "source": "github",
+        "repo": "paulohenriquevn/academic-research-loop"
+      },
       "version": "1.0.0",
       "author": {
         "name": "Paulo (usemacaw)",
