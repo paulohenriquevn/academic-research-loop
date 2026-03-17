@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Human review mode via `--human-review` flag — processes structured REVIEW-N.md files and produces versioned paper revisions (#REVIEW-1)
+- Review handler agent (`agents/review-handler.md`) — triages review items into 5 action types: REVISE, RE_DISCOVER, RE_SYNTHESIZE, EXPERIMENT, ACKNOWLEDGED (#REVIEW-2)
+- Revision writer agent (`agents/revision-writer.md`) — rewrites specific sections to address feedback while maintaining epistemic rigor (#REVIEW-3)
+- Human review block template (`templates/human-review-block.md`) — Phase 8 instructions for conditional re-execution based on review content (#REVIEW-4)
+- Review template (`templates/review-template.md`) — structured format with severity, category, acceptance criteria per item (#REVIEW-5)
+- Reviews table in database (`paper_database.py`) — tracks review items with severity, category, action_type, status, resolution (#REVIEW-6)
+- DB commands: `add-review`, `update-review`, `query-reviews`, `review-stats` (#REVIEW-6)
+- Agent message types: `review_item`, `revision` for Phase 8 communication (#REVIEW-7)
+- Quality evaluator Phase 8 rubric: completeness, accuracy, regression, acceptance criteria (threshold 0.75) (#REVIEW-8)
+- Paper versioning: `final-v{N}.md` snapshots before each revision round (#REVIEW-9)
+- Phase 8 (revision) in stop-hook state machine with review-wait mechanism (#REVIEW-10)
+- 24 tests for review feature: CRUD, CLI, stats, schema validation (`tests/test_review_feature.py`) (#REVIEW-11)
+
+### Added (previous)
 - Experimentation mode via `--experiments` flag — writes code, executes benchmarks, trains models, stores empirical results (#EXP-1)
 - Experiment designer agent (`agents/experiment-designer.md`) — reads gaps, checks hardware, proposes feasible experiments with runtime estimates (#EXP-2)
 - Experiment coder agent (`agents/experiment-coder.md`) — Autoresearch pattern: writes scripts, executes, evaluates, keep/discard, max 3 retries (#EXP-3)
@@ -51,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Phase 3 instructions in `research-prompt.md` — `manage_citations.py add` now includes `--db-path` and `--paper-id` to prevent NULL bibtex_key (#FIX-1)
 
 ### Fixed
+- Stop hook bash tests failing due to missing `experiments_enabled` and `human_review_enabled` fields in test state files (#FIX-4)
 - bibtex_key never synced to SQLite papers table — root cause of fact-check reporting 100% missing references (#FIX-1)
 - fact_check.py silently degraded with NULL bibtex_keys instead of failing loudly or self-healing (#FIX-2)
 - quality-evaluator returned empty dimensions `{}` for passing phases, making quality audit impossible (#FIX-3)

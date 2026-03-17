@@ -96,6 +96,8 @@ min_papers: 10
 papers_found: 5
 papers_screened: 0
 papers_analyzed: 0
+experiments_enabled: false
+human_review_enabled: false
 ---
 
 Research prompt text here
@@ -216,6 +218,8 @@ min_papers: 10
 papers_found: 0
 papers_screened: 0
 papers_analyzed: 0
+experiments_enabled: false
+human_review_enabled: false
 ---
 
 Prompt

@@ -481,7 +481,7 @@ python3 {{PLUGIN_ROOT}}/scripts/fetch_paper_content.py --arxiv-id ID [--semantic
 
 ### Database
 ```bash
-python3 {{PLUGIN_ROOT}}/scripts/paper_database.py init|add-paper|update-paper|add-analysis|add-evidence|query|query-evidence|evidence-matrix|stats|add-message|query-messages|add-quality-score|quality-history --db-path {{OUTPUT_DIR}}/research.db
+python3 {{PLUGIN_ROOT}}/scripts/paper_database.py init|add-paper|update-paper|add-analysis|add-evidence|query|query-evidence|evidence-matrix|stats|add-message|query-messages|add-quality-score|quality-history|add-review|update-review|query-reviews|review-stats --db-path {{OUTPUT_DIR}}/research.db
 ```
 
 ### Citations
@@ -538,13 +538,15 @@ Always record your key outputs as messages for downstream agents.
 | **Theory Specialist** | `researcher-theory` | Theoretical frameworks, formal analysis, conceptual contributions |
 | **Applications Specialist** | `researcher-applications` | Real-world impact, use cases, deployment, industry adoption |
 
-Additional specialists are available for specific tasks: `paper-screener`, `paper-analyzer`, `evidence-extractor`, `synthesis-writer`, `outline-architect`, `outline-critic`, `writing-instructor`, `section-writer`, `quality-evaluator`, `fact-checker`, `academic-reviewer`, `figure-generator`, `cross-validator`, `latex-exporter`.
+Additional specialists are available for specific tasks: `paper-screener`, `paper-analyzer`, `evidence-extractor`, `synthesis-writer`, `outline-architect`, `outline-critic`, `writing-instructor`, `section-writer`, `quality-evaluator`, `fact-checker`, `academic-reviewer`, `figure-generator`, `cross-validator`, `latex-exporter`, `review-handler`, `revision-writer`.
 
 ---
 
 {{APPLIED_RESEARCH_BLOCK}}
 
 {{EXPERIMENTATION_BLOCK}}
+
+{{HUMAN_REVIEW_BLOCK}}
 
 ## Rules
 

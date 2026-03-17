@@ -21,7 +21,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -115,6 +115,27 @@ CREATE INDEX IF NOT EXISTS idx_messages_phase ON agent_messages(phase);
 CREATE INDEX IF NOT EXISTS idx_messages_type ON agent_messages(message_type);
 CREATE INDEX IF NOT EXISTS idx_evidence_paper ON evidence(paper_id);
 CREATE INDEX IF NOT EXISTS idx_evidence_metric ON evidence(metric);
+
+CREATE TABLE IF NOT EXISTS reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    review_file TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    category TEXT NOT NULL,
+    target_section TEXT,
+    description TEXT NOT NULL,
+    required_action TEXT NOT NULL,
+    acceptance_criteria TEXT NOT NULL,
+    action_type TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    resolution_notes TEXT,
+    version_introduced INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_reviews_status ON reviews(status);
+CREATE INDEX IF NOT EXISTS idx_reviews_severity ON reviews(severity);
 """
 
 
@@ -464,6 +485,16 @@ def get_stats(db_path: str) -> dict:
     for row in conn.execute("SELECT evidence_type, COUNT(*) as cnt FROM evidence GROUP BY evidence_type"):
         stats["evidence_by_type"][row["evidence_type"]] = row["cnt"]
 
+    # Reviews summary
+    try:
+        stats["total_reviews"] = conn.execute("SELECT COUNT(*) FROM reviews").fetchone()[0]
+        stats["reviews_by_status"] = {}
+        for row in conn.execute("SELECT status, COUNT(*) as cnt FROM reviews GROUP BY status"):
+            stats["reviews_by_status"][row["status"]] = row["cnt"]
+    except sqlite3.OperationalError:
+        stats["total_reviews"] = 0
+        stats["reviews_by_status"] = {}
+
     # Quality scores summary
     stats["quality_summary"] = {}
     for row in conn.execute(
@@ -477,6 +508,100 @@ def get_stats(db_path: str) -> dict:
             "passes": row["passes"],
         }
 
+    conn.close()
+    return stats
+
+
+def add_review(db_path: str, review_file: str, item_id: str,
+               severity: str, category: str, description: str,
+               required_action: str, acceptance_criteria: str,
+               target_section: str | None = None,
+               action_type: str | None = None) -> dict:
+    """Add a review item to the database."""
+    conn = get_connection(db_path)
+    conn.execute(
+        """INSERT INTO reviews
+           (review_file, item_id, severity, category, target_section,
+            description, required_action, acceptance_criteria, action_type)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (review_file, item_id, severity, category, target_section,
+         description, required_action, acceptance_criteria, action_type),
+    )
+    conn.commit()
+    rid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.close()
+    return {"status": "added", "id": rid, "item_id": item_id}
+
+
+def update_review(db_path: str, item_id: str, updates: dict) -> dict:
+    """Update a review item's status, action_type, or resolution."""
+    conn = get_connection(db_path)
+    allowed_fields = {
+        "action_type", "status", "resolution_notes", "version_introduced",
+    }
+    set_clauses = []
+    values = []
+    for field, value in updates.items():
+        if field in allowed_fields:
+            set_clauses.append(f"{field} = ?")
+            values.append(value)
+
+    if not set_clauses:
+        conn.close()
+        return {"status": "error", "message": "no valid fields to update"}
+
+    if "status" in updates and updates["status"] == "resolved":
+        set_clauses.append("resolved_at = CURRENT_TIMESTAMP")
+
+    values.append(item_id)
+    conn.execute(
+        f"UPDATE reviews SET {', '.join(set_clauses)} WHERE item_id = ?", values
+    )
+    conn.commit()
+    conn.close()
+    return {"status": "updated", "item_id": item_id}
+
+
+def query_reviews(db_path: str, status: str | None = None,
+                  severity: str | None = None,
+                  action_type: str | None = None,
+                  review_file: str | None = None) -> list[dict]:
+    """Query review items with optional filters."""
+    conn = get_connection(db_path)
+    query = "SELECT * FROM reviews WHERE 1=1"
+    params: list = []
+    if status:
+        query += " AND status = ?"
+        params.append(status)
+    if severity:
+        query += " AND severity = ?"
+        params.append(severity)
+    if action_type:
+        query += " AND action_type = ?"
+        params.append(action_type)
+    if review_file:
+        query += " AND review_file = ?"
+        params.append(review_file)
+    query += " ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'major' THEN 2 WHEN 'minor' THEN 3 END, created_at ASC"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_review_stats(db_path: str) -> dict:
+    """Get review statistics summary."""
+    conn = get_connection(db_path)
+    stats: dict = {}
+    stats["total"] = conn.execute("SELECT COUNT(*) FROM reviews").fetchone()[0]
+    stats["by_status"] = {}
+    for row in conn.execute("SELECT status, COUNT(*) as cnt FROM reviews GROUP BY status"):
+        stats["by_status"][row["status"]] = row["cnt"]
+    stats["by_severity"] = {}
+    for row in conn.execute("SELECT severity, COUNT(*) as cnt FROM reviews GROUP BY severity"):
+        stats["by_severity"][row["severity"]] = row["cnt"]
+    stats["by_action"] = {}
+    for row in conn.execute("SELECT action_type, COUNT(*) as cnt FROM reviews WHERE action_type IS NOT NULL GROUP BY action_type"):
+        stats["by_action"][row["action_type"]] = row["cnt"]
     conn.close()
     return stats
 
@@ -536,7 +661,7 @@ def main() -> None:
     am.add_argument("--phase", type=int, required=True)
     am.add_argument("--iteration", type=int, required=True)
     am.add_argument("--message-type", required=True,
-                    choices=["finding", "instruction", "feedback", "question", "decision", "meeting_minutes"])
+                    choices=["finding", "instruction", "feedback", "question", "decision", "meeting_minutes", "review_item", "revision"])
     am.add_argument("--content", required=True)
     am.add_argument("--to-agent", default=None)
     am.add_argument("--metadata-json", default="{}")
@@ -579,6 +704,41 @@ def main() -> None:
     qh = subparsers.add_parser("quality-history", help="Get quality scores")
     qh.add_argument("--db-path", required=True)
     qh.add_argument("--phase", type=int, default=None)
+
+    # add-review
+    ar = subparsers.add_parser("add-review", help="Add a review item")
+    ar.add_argument("--db-path", required=True)
+    ar.add_argument("--review-file", required=True)
+    ar.add_argument("--item-id", required=True)
+    ar.add_argument("--severity", required=True, choices=["critical", "major", "minor"])
+    ar.add_argument("--category", required=True,
+                    choices=["argument", "coverage", "methodology", "evidence",
+                             "experiments", "clarity", "architecture"])
+    ar.add_argument("--description", required=True)
+    ar.add_argument("--required-action", required=True)
+    ar.add_argument("--acceptance-criteria", required=True)
+    ar.add_argument("--target-section", default=None)
+    ar.add_argument("--action-type", default=None,
+                    choices=["REVISE", "RE_DISCOVER", "RE_SYNTHESIZE", "EXPERIMENT", "ACKNOWLEDGED"])
+
+    # update-review
+    ur = subparsers.add_parser("update-review", help="Update review item status")
+    ur.add_argument("--db-path", required=True)
+    ur.add_argument("--item-id", required=True)
+    ur.add_argument("--updates-json", required=True)
+
+    # query-reviews
+    qr = subparsers.add_parser("query-reviews", help="Query review items")
+    qr.add_argument("--db-path", required=True)
+    qr.add_argument("--status", default=None, choices=["pending", "in_progress", "resolved", "wont_fix"])
+    qr.add_argument("--severity", default=None, choices=["critical", "major", "minor"])
+    qr.add_argument("--action-type", default=None,
+                    choices=["REVISE", "RE_DISCOVER", "RE_SYNTHESIZE", "EXPERIMENT", "ACKNOWLEDGED"])
+    qr.add_argument("--review-file", default=None)
+
+    # review-stats
+    rs = subparsers.add_parser("review-stats", help="Review statistics summary")
+    rs.add_argument("--db-path", required=True)
 
     # stats
     sp = subparsers.add_parser("stats", help="Database statistics")
@@ -647,6 +807,30 @@ def main() -> None:
     elif args.command == "quality-history":
         history = get_quality_history(args.db_path, args.phase)
         json.dump(history, sys.stdout, indent=2)
+
+    elif args.command == "add-review":
+        result = add_review(
+            args.db_path, args.review_file, args.item_id,
+            args.severity, args.category, args.description,
+            args.required_action, args.acceptance_criteria,
+            args.target_section, args.action_type,
+        )
+        json.dump(result, sys.stdout, indent=2)
+
+    elif args.command == "update-review":
+        result = update_review(args.db_path, args.item_id, json.loads(args.updates_json))
+        json.dump(result, sys.stdout, indent=2)
+
+    elif args.command == "query-reviews":
+        results = query_reviews(
+            args.db_path, args.status, args.severity,
+            args.action_type, args.review_file,
+        )
+        json.dump(results, sys.stdout, indent=2)
+
+    elif args.command == "review-stats":
+        stats = get_review_stats(args.db_path)
+        json.dump(stats, sys.stdout, indent=2)
 
     elif args.command == "stats":
         stats = get_stats(args.db_path)

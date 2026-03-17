@@ -56,6 +56,13 @@ This implements the Autoresearch keep/discard pattern — work that doesn't meet
 - **Consistency** (0.1): Is formatting and terminology consistent?
 - **Threshold:** 0.7
 
+### Phase 8: Revision
+- **Completeness** (0.3): Are all critical and major review items addressed?
+- **Accuracy** (0.25): Do revisions actually fix the issues identified?
+- **Regression** (0.2): Did revisions introduce new problems or break existing content?
+- **Acceptance criteria** (0.25): Do resolutions meet the reviewer's acceptance criteria?
+- **Threshold:** 0.75
+
 ## Output Format
 
 You MUST output a JSON block with your evaluation:

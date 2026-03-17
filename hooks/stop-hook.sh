@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Academic Research Loop - Phase-Aware Stop Hook
-# Extends Ralph Wiggum's stop hook with a 7-phase research pipeline.
-# Phases: discovery → screening → analysis → synthesis → writing → review → polish
+# Extends Ralph Wiggum's stop hook with a 7+1 phase research pipeline.
+# Phases: discovery → screening → analysis → synthesis → writing → review → polish [→ revision]
 
 set -euo pipefail
 
@@ -36,6 +36,7 @@ PAPERS_FOUND=$(parse_field "papers_found")
 PAPERS_SCREENED=$(parse_field "papers_screened")
 PAPERS_ANALYZED=$(parse_field "papers_analyzed")
 EXPERIMENTS_ENABLED=$(parse_field "experiments_enabled")
+HUMAN_REVIEW_ENABLED=$(parse_field "human_review_enabled")
 
 # Phase max iterations (bash associative array)
 declare -A PHASE_MAX_ITER
@@ -46,6 +47,7 @@ PHASE_MAX_ITER[4]=3   # synthesis (outline + critique + revision)
 PHASE_MAX_ITER[5]=4   # writing (instructions + per-section writing)
 PHASE_MAX_ITER[6]=3   # review (peer review + fact-check + revision)
 PHASE_MAX_ITER[7]=2   # polish (figures + cross-validation + LaTeX export)
+PHASE_MAX_ITER[8]=5   # revision from human review (triage + actions + revise + quality gate + finalize)
 
 # Extend Phase 4 for experiments
 if [[ "$EXPERIMENTS_ENABLED" == "true" ]]; then
@@ -61,6 +63,7 @@ PHASE_NAMES[4]="synthesis"
 PHASE_NAMES[5]="writing"
 PHASE_NAMES[6]="review"
 PHASE_NAMES[7]="polish"
+PHASE_NAMES[8]="revision"
 
 # Quality gate: phases that require quality evaluation before advancing
 # Format: phase_number -> 1 (requires gate) or 0 (no gate)
@@ -72,6 +75,7 @@ PHASE_QUALITY_GATE[4]=1   # synthesis — quality of themes matters
 PHASE_QUALITY_GATE[5]=1   # writing — draft quality matters
 PHASE_QUALITY_GATE[6]=1   # review — fact-check results matter
 PHASE_QUALITY_GATE[7]=0   # polish — final pass, no gate
+PHASE_QUALITY_GATE[8]=1   # revision — must meet acceptance criteria
 
 # ---------------------------------------------------------------------------
 # Validate numeric fields
@@ -100,7 +104,7 @@ validate_numeric "max_global_iterations" "$MAX_GLOBAL_ITERATIONS"
 if [[ $MAX_GLOBAL_ITERATIONS -gt 0 ]] && [[ $GLOBAL_ITERATION -ge $MAX_GLOBAL_ITERATIONS ]]; then
   echo "🛑 Research loop: Max global iterations ($MAX_GLOBAL_ITERATIONS) reached."
   echo "   Topic: $TOPIC"
-  echo "   Final phase: $CURRENT_PHASE/7 ($PHASE_NAME)"
+  echo "   Final phase: $CURRENT_PHASE ($PHASE_NAME)"
   echo "   Papers found: $PAPERS_FOUND | Screened: $PAPERS_SCREENED | Analyzed: $PAPERS_ANALYZED"
   rm "$STATE_FILE"
   exit 0
@@ -153,7 +157,7 @@ if [[ "$COMPLETION_PROMISE" != "null" ]] && [[ -n "$COMPLETION_PROMISE" ]]; then
     echo "✅ Research loop complete: <promise>$COMPLETION_PROMISE</promise>"
     echo "   Topic: $TOPIC"
     echo "   Total iterations: $GLOBAL_ITERATION"
-    echo "   Final phase: $CURRENT_PHASE/7 ($PHASE_NAME)"
+    echo "   Final phase: $CURRENT_PHASE ($PHASE_NAME)"
     echo "   Papers found: $PAPERS_FOUND | Screened: $PAPERS_SCREENED | Analyzed: $PAPERS_ANALYZED"
     echo "   Output: $OUTPUT_DIR/final.md"
     rm "$STATE_FILE"
@@ -211,9 +215,27 @@ if [[ "$PHASE_ADVANCED" != "true" ]] && [[ "$QUALITY_FAILED" != "true" ]] && [[ 
 fi
 
 # Advance phase if needed
+MAX_PHASE=7
+if [[ "$HUMAN_REVIEW_ENABLED" == "true" ]]; then
+  MAX_PHASE=8
+fi
+
 if [[ "$PHASE_ADVANCED" == "true" ]]; then
-  if [[ $CURRENT_PHASE -ge 7 ]]; then
-    echo "🛑 Research loop: All 7 phases complete but no completion promise detected."
+  # When transitioning from Phase 7 to Phase 8, check for review files
+  if [[ $CURRENT_PHASE -eq 7 ]] && [[ "$HUMAN_REVIEW_ENABLED" == "true" ]]; then
+    REVIEW_COUNT=$(find "$OUTPUT_DIR/reviews" -name "REVIEW-*.md" ! -name "REVIEW-TEMPLATE.md" 2>/dev/null | wc -l)
+    if [[ $REVIEW_COUNT -eq 0 ]]; then
+      echo "📝 Research loop: Phase 7 complete. Waiting for human reviews."
+      echo "   Place REVIEW-N.md files in: $OUTPUT_DIR/reviews/"
+      echo "   Template available at: $OUTPUT_DIR/reviews/REVIEW-TEMPLATE.md"
+      echo "   Then re-run /research-loop to process reviews."
+      rm "$STATE_FILE"
+      exit 0
+    fi
+  fi
+
+  if [[ $CURRENT_PHASE -ge $MAX_PHASE ]]; then
+    echo "🛑 Research loop: All $MAX_PHASE phases complete but no completion promise detected."
     echo "   Topic: $TOPIC"
     echo "   Output should be in: $OUTPUT_DIR/final.md"
     rm "$STATE_FILE"
@@ -263,6 +285,7 @@ papers_found: $PAPERS_FOUND
 papers_screened: $PAPERS_SCREENED
 papers_analyzed: $PAPERS_ANALYZED
 experiments_enabled: ${EXPERIMENTS_ENABLED:-false}
+human_review_enabled: ${HUMAN_REVIEW_ENABLED:-false}
 ---
 
 $PROMPT_TEXT
@@ -274,7 +297,7 @@ mv "$TEMP_FILE" "$STATE_FILE"
 # ---------------------------------------------------------------------------
 PHASE_MAX_FOR_CURRENT=${PHASE_MAX_ITER[$CURRENT_PHASE]:-3}
 
-SYSTEM_MSG="📚 Research Loop | Phase $CURRENT_PHASE/7: $PHASE_NAME | Phase iter $NEXT_PHASE_ITER/$PHASE_MAX_FOR_CURRENT | Global iter $NEXT_GLOBAL"
+SYSTEM_MSG="📚 Research Loop | Phase $CURRENT_PHASE/$MAX_PHASE: $PHASE_NAME | Phase iter $NEXT_PHASE_ITER/$PHASE_MAX_FOR_CURRENT | Global iter $NEXT_GLOBAL"
 SYSTEM_MSG="$SYSTEM_MSG | Papers: found=$PAPERS_FOUND screened=$PAPERS_SCREENED analyzed=$PAPERS_ANALYZED"
 SYSTEM_MSG="$SYSTEM_MSG | ⚠️ MANDATORY: Start with GROUP MEETING (chief-researcher + all specialists) before ANY work"
 

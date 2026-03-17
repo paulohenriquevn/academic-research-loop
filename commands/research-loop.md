@@ -1,6 +1,6 @@
 ---
 description: "Start autonomous academic research loop"
-argument-hint: "TOPIC [--max-iterations N] [--min-papers N] [--output-dir PATH]"
+argument-hint: "TOPIC [--max-iterations N] [--min-papers N] [--output-dir PATH] [--human-review]"
 allowed-tools: ["Bash(${CLAUDE_PLUGIN_ROOT}/scripts/setup-research-loop.sh:*)", "Bash(${CLAUDE_PLUGIN_ROOT}/scripts/search_arxiv.py:*)", "Bash(${CLAUDE_PLUGIN_ROOT}/scripts/search_semantic_scholar.py:*)", "Bash(${CLAUDE_PLUGIN_ROOT}/scripts/manage_citations.py:*)", "Bash(${CLAUDE_PLUGIN_ROOT}/scripts/paper_database.py:*)", "Bash(${CLAUDE_PLUGIN_ROOT}/scripts/fetch_paper_content.py:*)", "Bash(${CLAUDE_PLUGIN_ROOT}/scripts/fact_check.py:*)"]
 hide-from-slash-command-tool: "true"
 ---

@@ -15,6 +15,7 @@ MIN_PAPERS=10
 OUTPUT_DIR="./research-output"
 CODEBASE_PATH=""
 EXPERIMENTS_ENABLED=""
+HUMAN_REVIEW_ENABLED=""
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -37,6 +38,8 @@ OPTIONS:
                                  project and map literature to its components
   --experiments                  Enable EXPERIMENTATION mode — write code,
                                  run benchmarks, train models, measure results
+  --human-review                 Enable HUMAN REVIEW mode — after Phase 7,
+                                 process REVIEW-N.md files and produce revisions
   -h, --help                     Show this help message
 
 DESCRIPTION:
@@ -60,6 +63,7 @@ PHASES:
   5. Writing     (max 3 iter)  Draft the paper with citations
   6. Review      (max 2 iter)  Academic peer-review and revision
   7. Polish      (max 1 iter)  Figures, cross-validation, LaTeX export, final polish
+  8. Revision     (max 5 iter)  Process human reviews, revise paper (--human-review)
 
 EXAMPLES:
   /research-loop Transformer architectures for protein folding
@@ -134,6 +138,10 @@ HELP_EOF
       EXPERIMENTS_ENABLED="true"
       shift
       ;;
+    --human-review)
+      HUMAN_REVIEW_ENABLED="true"
+      shift
+      ;;
     *)
       TOPIC_PARTS+=("$1")
       shift
@@ -202,6 +210,25 @@ if [[ -n "$EXPERIMENTS_ENABLED" ]]; then
   fi
 fi
 
+# ---------------------------------------------------------------------------
+# Build human review block (if --human-review is set)
+# ---------------------------------------------------------------------------
+HUMAN_REVIEW_BLOCK=""
+if [[ -n "$HUMAN_REVIEW_ENABLED" ]]; then
+  HUMAN_REVIEW_TEMPLATE="$PLUGIN_ROOT/templates/human-review-block.md"
+  if [[ -f "$HUMAN_REVIEW_TEMPLATE" ]]; then
+    HUMAN_REVIEW_BLOCK=$(sed \
+      -e "s|{{OUTPUT_DIR}}|$OUTPUT_DIR|g" \
+      -e "s|{{PLUGIN_ROOT}}|$PLUGIN_ROOT|g" \
+      -e "s|{{COMPLETION_PROMISE}}|$COMPLETION_PROMISE|g" \
+      "$HUMAN_REVIEW_TEMPLATE")
+  else
+    echo "⚠️  Warning: Human review template not found at $HUMAN_REVIEW_TEMPLATE" >&2
+    echo "   Continuing without human review mode." >&2
+    HUMAN_REVIEW_ENABLED=""
+  fi
+fi
+
 # Replace placeholders in template
 # First pass: replace simple placeholders with sed
 RESEARCH_PROMPT=$(sed \
@@ -219,8 +246,10 @@ import sys
 prompt = sys.stdin.read()
 applied = '''$APPLIED_BLOCK'''
 experiments = '''$EXPERIMENTATION_BLOCK'''
+human_review = '''$HUMAN_REVIEW_BLOCK'''
 prompt = prompt.replace('{{APPLIED_RESEARCH_BLOCK}}', applied)
 prompt = prompt.replace('{{EXPERIMENTATION_BLOCK}}', experiments)
+prompt = prompt.replace('{{HUMAN_REVIEW_BLOCK}}', human_review)
 print(prompt)
 " <<< "$RESEARCH_PROMPT")
 
@@ -233,6 +262,12 @@ mkdir -p "$OUTPUT_DIR/state/evidence"
 mkdir -p "$OUTPUT_DIR/figures"
 if [[ -n "$EXPERIMENTS_ENABLED" ]]; then
   mkdir -p "$OUTPUT_DIR/experiments/results"
+fi
+if [[ -n "$HUMAN_REVIEW_ENABLED" ]]; then
+  mkdir -p "$OUTPUT_DIR/reviews"
+  if [[ -f "$PLUGIN_ROOT/templates/review-template.md" ]]; then
+    cp "$PLUGIN_ROOT/templates/review-template.md" "$OUTPUT_DIR/reviews/REVIEW-TEMPLATE.md"
+  fi
 fi
 
 # Initialize empty candidates and shortlist if they don't exist
@@ -279,6 +314,7 @@ papers_found: 0
 papers_screened: 0
 papers_analyzed: 0
 experiments_enabled: ${EXPERIMENTS_ENABLED:-false}
+human_review_enabled: ${HUMAN_REVIEW_ENABLED:-false}
 ---
 
 $RESEARCH_PROMPT
@@ -307,6 +343,12 @@ if [[ -n "$EXPERIMENTS_ENABLED" ]]; then
   PHASE5_EXTRA="${PHASE5_EXTRA} + empirical results"
 fi
 
+PHASE8_LINE=""
+if [[ -n "$HUMAN_REVIEW_ENABLED" ]]; then
+  MODE_LABEL="${MODE_LABEL} + HUMAN REVIEW"
+  PHASE8_LINE="  8. Revision   — Process human reviews, produce versioned revision"
+fi
+
 cat <<EOF
 📚 Academic Research Loop activated!
 
@@ -326,7 +368,8 @@ Pipeline phases:
   5. Writing     — Draft paper with citations${PHASE5_EXTRA}
   6. Review      — Academic peer-review
   7. Polish      — Figures, cross-validation, LaTeX export
-
+${PHASE8_LINE:+$PHASE8_LINE
+}
 State: .claude/research-loop.local.md
 Monitor: grep 'current_phase\|global_iteration\|papers_' .claude/research-loop.local.md
 
