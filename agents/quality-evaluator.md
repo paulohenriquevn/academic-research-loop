@@ -13,10 +13,19 @@ This implements the Autoresearch keep/discard pattern — work that doesn't meet
 ## Evaluation Rubrics by Phase
 
 ### Phase 1: Discovery
-- **Coverage** (0.4): Are multiple search queries used? Multiple sources (Arxiv + Semantic Scholar)?
-- **Quantity** (0.3): Is the minimum paper count met?
-- **Diversity** (0.3): Are papers from different years, venues, and research groups?
-- **Threshold:** 0.6
+- **Query diversity** (0.25): Are at least 12 queries used across ALL 5 categories (solution-oriented, problem-oriented, component, systems/runtime, multilingual/domain)? Missing an entire category = score 0.0 on this dimension.
+- **Snowball search** (0.20): Was citation-based snowball search (forward + backward) executed on at least 5 papers? Are snowball sources logged in methodology.md?
+- **Coverage** (0.20): Are multiple sources used (Arxiv + Semantic Scholar)? Were rate-limited queries retried (not skipped)? Were CLAUDE.md mandatory queries included?
+- **Quantity** (0.15): Is the minimum paper count met?
+- **Diversity** (0.20): Are papers from different years, venues, research groups, and approaches? Are papers from adjacent fields included (not just the obvious ones)?
+- **Threshold:** 0.7
+
+**AUTOMATIC FAIL conditions:**
+- Fewer than 12 keyword queries executed
+- Any of the 5 query categories entirely missing
+- No snowball search performed
+- Any query skipped due to rate limiting without retry
+- CLAUDE.md defines mandatory queries and any are missing
 
 ### Phase 2: Screening
 - **Completeness** (0.3): Are all candidates scored?
@@ -25,19 +34,29 @@ This implements the Autoresearch keep/discard pattern — work that doesn't meet
 - **Threshold:** 0.6
 
 ### Phase 3: Analysis
-- **Depth** (0.4): Do analyses go beyond restating the abstract?
-- **Structure** (0.3): Do all analyses follow the required template?
-- **Connections** (0.3): Are cross-paper connections and notable references identified?
-- **Threshold:** 0.6
+- **Depth** (0.25): Do analyses go beyond restating the abstract? Are methodology details, limitations, and confounds extracted?
+- **Mandatory metrics** (0.30): Does EVERY paper have the mandatory metrics table filled? Are missing values explicitly marked "NOT REPORTED" (not blank)? Is every latency claim classified as MEASURED/SIMULATED/ARCHITECTURAL?
+- **Structure** (0.20): Do all analyses follow the required template?
+- **Connections** (0.25): Are cross-paper connections and notable references identified?
+- **Threshold:** 0.7
+
+**AUTOMATIC FAIL conditions:**
+- Any paper analysis missing the mandatory metrics table
+- Any latency claim classified as MEASURED without specifying GPU type and wall-clock ms
 
 ### Phase 4: Synthesis
-- **Themes** (0.2): Are 3+ distinct themes identified?
-- **Evidence** (0.2): Is every theme grounded in specific papers?
-- **Gaps** (0.2): Are gaps and contradictions explicitly identified?
-- **Structure** (0.15): Is a survey structure proposed?
-- **Corpus table** (0.1): Is the structured corpus table present with evidence strength per paper?
-- **Epistemic calibration** (0.15): Are cross-paper claims classified (measured vs inferred vs hypothesized)?
+- **Themes** (0.15): Are 3+ distinct themes identified?
+- **Evidence** (0.15): Is every theme grounded in specific papers?
+- **Gaps** (0.15): Are gaps and contradictions explicitly identified?
+- **Structure** (0.10): Is a survey structure proposed?
+- **Corpus table with taxonomy** (0.20): Is the structured corpus table present with 3-axis classification (alignment × generation × streaming) AND evidence strength per paper? Are ALL papers placed on all three axes?
+- **Epistemic calibration** (0.15): Are cross-paper claims classified (measured vs simulated vs architectural vs hypothesized)?
+- **Evidence matrix** (0.10): Is the cross-paper evidence matrix present with ONLY measured values?
 - **Threshold:** 0.7
+
+**AUTOMATIC FAIL conditions:**
+- Corpus table missing the 3-axis taxonomy
+- Any paper in corpus table without classification on all three axes
 
 ### Phase 5: Writing
 - **Completeness** (0.2): Are all sections from the outline present?
@@ -57,11 +76,21 @@ This implements the Autoresearch keep/discard pattern — work that doesn't meet
 - **Threshold:** 0.7
 
 ### Phase 8: Revision
-- **Completeness** (0.3): Are all critical and major review items addressed?
-- **Accuracy** (0.25): Do revisions actually fix the issues identified?
-- **Regression** (0.2): Did revisions introduce new problems or break existing content?
-- **Acceptance criteria** (0.25): Do resolutions meet the reviewer's acceptance criteria?
-- **Threshold:** 0.75
+- **Completeness** (0.2): Are all critical and major review items addressed?
+- **Accuracy** (0.2): Do revisions actually fix the issues identified?
+- **Numeric verification** (0.25): Are ALL numbers verified against the evidence DB? Is `state/numeric_verification.md` present and clean (0 unverified claims)?
+- **Regression** (0.15): Did revisions introduce new problems or break existing content?
+- **Acceptance criteria** (0.2): Do resolutions meet the reviewer's acceptance criteria?
+- **Threshold:** 0.80
+
+**AUTOMATIC FAIL conditions (score = 0.0, regardless of other dimensions) — these are HARD BLOCKS, not warnings:**
+- Any EXPERIMENT item that was only designed but not executed on available hardware → FAIL 0.0
+- Any numeric claim without evidence DB source or explicit design-target label → FAIL 0.0
+- Missing `state/numeric_verification.md` report → FAIL 0.0
+- Any number in revised sections that does not appear in the verification report → FAIL 0.0
+- `numeric_verification.md` contains ANY row with status ✗ UNVERIFIED → FAIL 0.0
+
+**You MUST check `state/numeric_verification.md` BEFORE scoring any other dimension. If it does not exist or contains unverified claims, immediately return score 0.0 with feedback listing every unverified number. Do not evaluate other dimensions.**
 
 ## Output Format
 

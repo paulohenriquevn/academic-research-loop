@@ -160,8 +160,8 @@ def main() -> None:
         description="Search Arxiv for academic papers"
     )
     parser.add_argument("--query", required=True, help="Search query")
-    parser.add_argument("--max-results", type=int, default=10,
-                        help="Maximum results to return (default: 10)")
+    parser.add_argument("--max-results", type=int, default=20,
+                        help="Maximum results to return (default: 20)")
     parser.add_argument("--category", default=None,
                         help="Arxiv category filter (e.g., cs.CL, cs.AI)")
     parser.add_argument("--sort-by", default="relevance",

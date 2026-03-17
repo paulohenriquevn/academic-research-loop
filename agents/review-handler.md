@@ -112,7 +112,8 @@ python3 {PLUGIN_ROOT}/scripts/paper_database.py add-message \
 
 - **Never skip critical items.** Every critical item MUST have an action that is NOT `ACKNOWLEDGED`.
 - **Be conservative with RE_DISCOVER.** Only trigger new searches when the reviewer identifies a genuine coverage gap, not when they want more detail on existing topics.
-- **Be conservative with EXPERIMENT.** Only trigger experiments when hardware is available and the experiment is feasible. Check `experiment_plan.md` if it exists to avoid duplicates.
+- **EXPERIMENT means EXECUTE, not just design.** When you classify an item as EXPERIMENT, the experiment MUST be written as a script, executed on available hardware, and results stored in the evidence DB. An experiment that is only "designed" but not run is a FAILED experiment. Check available hardware with `nvidia-smi` and `python3 -c "import torch; print(torch.cuda.is_available())"` before classifying. If hardware is not available, classify as REVISE with a note that the experiment is deferred.
 - **Prefer REVISE over RE_SYNTHESIZE.** If the fix is just better writing, don't re-run synthesis.
 - **Group related items.** If multiple items target the same section, note dependencies so they are revised together.
 - **Preserve the reviewer's acceptance criteria verbatim.** The quality evaluator will check against these criteria.
+- **ZERO TOLERANCE for unverified numbers.** When triaging, flag any review item that involves numeric claims. The revision-writer MUST verify every number against the evidence DB. Include this requirement explicitly in the revision plan for each item that contains numeric claims.

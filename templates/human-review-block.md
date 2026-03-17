@@ -47,9 +47,13 @@ Execute actions in dependency order. **Not all steps run every time — only wha
 - Add new papers to the database
 
 **3b. EXPERIMENT (if any items require it AND experiments are feasible):**
+- **EXPERIMENT means EXECUTE, not just design.** An experiment that is only designed but not run is a FAILED experiment.
+- Check available hardware: `nvidia-smi` and `python3 -c "import torch; print(torch.cuda.is_available())"`
 - Launch experiment-designer to check hardware and propose experiments
-- Launch experiment-coder to execute (Autoresearch: write → run → evaluate)
+- Launch experiment-coder to execute (Autoresearch: write → run → evaluate → keep/discard → retry max 3)
 - Store results as `evidence_type="empirical"` in the database
+- The experiment script MUST produce a JSON results file with measured values
+- These measured values MUST be stored in the evidence DB before the revision-writer references them
 
 **3c. RE_SYNTHESIZE (if any items require it):**
 - Launch synthesis-writer with constraints from the review
@@ -91,14 +95,64 @@ Write `{{OUTPUT_DIR}}/reviews/REVIEW-RESPONSE-{N}.md`:
 - [x] Criterion 2 — [how it was met]
 ```
 
+#### Step 4b: MANDATORY Numeric Verification (ZERO TOLERANCE)
+
+**Before the quality gate, verify EVERY number in the revised paper.**
+
+This step is non-negotiable. A single unverified number is grounds for automatic FAIL.
+
+1. Run fact-checker on the revised paper:
+   ```bash
+   python3 {{PLUGIN_ROOT}}/scripts/fact_check.py check \
+     --draft-file {{OUTPUT_DIR}}/final.md --db-path {{OUTPUT_DIR}}/research.db
+   ```
+
+2. For each numeric claim in the revised sections, query the evidence DB:
+   ```bash
+   python3 {{PLUGIN_ROOT}}/scripts/paper_database.py query-evidence \
+     --db-path {{OUTPUT_DIR}}/research.db --metric METRIC_NAME
+   ```
+
+3. Produce a verification report at `{{OUTPUT_DIR}}/state/numeric_verification.md`:
+   ```markdown
+   # Numeric Verification Report — Revision v{N}
+
+   **Total numeric claims in revised sections:** X
+   **Verified against evidence DB:** Y
+   **Verified as design targets:** Z
+   **UNVERIFIED:** W (must be 0 to pass quality gate)
+
+   | Section | Claim | Value | Source | Evidence Type | Status |
+   |---------|-------|-------|--------|---------------|--------|
+   | 2.1.1 | SyncSpeech FPL-A | 40-60ms | evidence.id=12 | MEASURED | ✓ |
+   | 11.2 | PBR threshold | <5% | design target | DESIGN | ✓ (labeled) |
+   | 9.6 | Exp6 LLM rate | 25ms/token | NOT FOUND | — | ✗ UNVERIFIED |
+   ```
+
+4. **If ANY claim is UNVERIFIED → BLOCK. Do NOT proceed.**
+   - The revision process is BLOCKED until UNVERIFIED count = 0
+   - Do NOT proceed to quality gate. Do NOT proceed to finalization. Do NOT output completion promise.
+   - For each unverified claim, you MUST do one of:
+     a. **Find the evidence source** in the DB — query with different metric names or paper IDs
+     b. **Run an experiment** to produce the measured value — write script, execute, store result as `evidence_type="empirical"`
+     c. **Remove the claim entirely** from the paper — delete the sentence
+   - Repeat this step until EVERY number traces to a DB entry or is explicitly labeled as a design target
+   - There is NO workaround. An unverified number is a HARD BLOCK on the entire revision process.
+
 #### Step 5: Quality Gate
 
 Launch the **quality-evaluator** agent with the Phase 8 rubric:
-- **Completeness** (0.3): Are all critical and major review items addressed?
-- **Accuracy** (0.25): Do revisions actually fix the issues identified?
-- **Regression** (0.2): Did revisions introduce new problems or break existing content?
-- **Acceptance criteria** (0.25): Do resolutions meet the acceptance criteria from the review?
-- **Threshold:** 0.75
+- **Completeness** (0.2): Are all critical and major review items addressed?
+- **Accuracy** (0.2): Do revisions actually fix the issues identified?
+- **Numeric verification** (0.25): Are ALL numbers verified against the evidence DB? Is the numeric_verification.md report clean (0 unverified)?
+- **Regression** (0.15): Did revisions introduce new problems or break existing content?
+- **Acceptance criteria** (0.2): Do resolutions meet the acceptance criteria from the review?
+- **Threshold:** 0.80
+
+**AUTOMATIC FAIL conditions (regardless of score):**
+- Any EXPERIMENT item that was only designed but not executed
+- Any numeric claim without evidence DB source or explicit design-target label
+- Missing numeric_verification.md report
 
 If FAILED: re-run revision for unresolved items.
 If PASSED: proceed to finalization.

@@ -116,30 +116,70 @@ This choice governs the epistemic standards for the rest of the pipeline.
 [Start date — End date of search]
 ```
 
-### 1b. Execute Searches
+### 1b. Execute Searches (MANDATORY: Diverse Queries + Snowball + Retry)
 
-1. Formulate 3-5 diverse search queries for the topic "{{TOPIC}}"
-2. Run searches using the Python scripts:
-   ```bash
-   python3 {{PLUGIN_ROOT}}/scripts/search_arxiv.py --query "QUERY" --max-results 10
-   python3 {{PLUGIN_ROOT}}/scripts/search_semantic_scholar.py --query "QUERY" --max-results 10
-   ```
-3. Vary your queries: use synonyms, related terms, key authors, specific techniques
-4. **Log every query and result count** in `methodology.md` — this is non-negotiable
-5. For each paper found, add it to the database:
+**CRITICAL: The most common failure mode in literature surveys is narrow search queries that miss relevant papers outside your initial framing. You MUST search broadly.**
+
+#### Step 1: Keyword Searches (minimum 8 queries across BOTH sources)
+
+Formulate **at least 12 diverse search queries** covering ALL of the following categories. Missing any category is grounds for quality gate FAIL.
+
+- **Solution-oriented queries** (3+): terms describing known approaches (e.g., "streaming TTS", "monotonic alignment speech")
+- **Problem-oriented queries** (3+): terms describing the PROBLEM, not the solution (e.g., "text audio sequence length mismatch", "speech token synchronization", "hallucination text-to-speech", "simultaneous speech synthesis", "incremental speech generation online TTS")
+- **Component queries** (3+): individual components that might appear in novel architectures (e.g., "flow matching speech generation", "causal vocoder", "codec language model", "streaming codec language model", "causal audio token generation")
+- **Systems/Runtime queries** (2+): serving, deployment, and runtime optimization (e.g., "real time inference pipeline speech synthesis", "low latency serving speech GPU", "TTS latency optimization runtime")
+- **Multilingual/Domain queries** (2+): if the topic involves a specific language or domain, search for it explicitly (e.g., "Portuguese text to speech", "multilingual streaming TTS", "low resource streaming speech")
+
+**If CLAUDE.md defines mandatory query categories, you MUST include ALL of them.**
+
+Run each query on BOTH sources with **at least 20 results each**:
+```bash
+python3 {{PLUGIN_ROOT}}/scripts/search_arxiv.py --query "QUERY" --max-results 20
+python3 {{PLUGIN_ROOT}}/scripts/search_semantic_scholar.py --query "QUERY" --max-results 20 --year 2023-2026
+```
+
+**If a query returns a rate-limit error: WAIT and RETRY.** Do NOT skip rate-limited queries. Wait 30 seconds and try again. A skipped query is a gap in coverage.
+
+#### Step 2: Snowball Search (MANDATORY after initial queries)
+
+After adding all papers from keyword searches, run **citation-based snowball search** on the top 5 most relevant papers:
+
+```bash
+# Forward snowball: who cites this paper? (finds newer work that builds on it)
+python3 {{PLUGIN_ROOT}}/scripts/search_semantic_scholar.py citations --paper-id "ArXiv:ARXIV_ID" --max-results 20
+
+# Backward snowball: what does this paper cite? (finds foundational work you missed)
+python3 {{PLUGIN_ROOT}}/scripts/search_semantic_scholar.py references --paper-id "ArXiv:ARXIV_ID" --max-results 20
+```
+
+Snowball search catches papers that:
+- Use different terminology than your queries (e.g., TADA uses "dual alignment" not "streaming TTS")
+- Were published very recently and not yet indexed by keyword search
+- Are in adjacent fields that your queries don't cover
+
+#### Step 3: Log and Store
+
+1. **Log every query and result count** in `methodology.md` — including snowball searches and retried queries
+2. For each paper found, add it to the database:
    ```bash
    python3 {{PLUGIN_ROOT}}/scripts/paper_database.py add-paper --db-path {{OUTPUT_DIR}}/research.db --paper-json 'PAPER_JSON'
    ```
-6. Also write to `{{OUTPUT_DIR}}/state/candidates.json` for backward compatibility
-7. Record a discovery summary as an agent message:
+3. Also write to `{{OUTPUT_DIR}}/state/candidates.json` for backward compatibility
+4. Record a discovery summary as an agent message:
    ```bash
    python3 {{PLUGIN_ROOT}}/scripts/paper_database.py add-message --db-path {{OUTPUT_DIR}}/research.db \
      --from-agent discovery --phase 1 --iteration N --message-type finding \
-     --content "Found N papers. Search queries used: ..."
+     --content "Found N papers. Search queries used: ... Snowball papers from: ..."
    ```
-8. Update paper count: output `<!-- PAPERS_FOUND:N -->`
+5. Update paper count: output `<!-- PAPERS_FOUND:N -->`
 
-**Completion:** When you have >= {{MIN_PAPERS}} unique candidates AND `methodology.md` is complete, output `<!-- PHASE_1_COMPLETE -->`
+**Completion:** When ALL of the following are true:
+- >= {{MIN_PAPERS}} unique candidates in the database
+- At least 8 keyword queries executed (no skipped queries due to rate limiting)
+- Snowball search completed on top 5 papers
+- `methodology.md` is complete with all queries, results, and snowball sources logged
+
+Output `<!-- PHASE_1_COMPLETE -->`
 
 ---
 
@@ -203,7 +243,27 @@ This choice governs the epistemic standards for the rest of the pipeline.
    ```
 4. Create analysis files at `{{OUTPUT_DIR}}/state/analyses/paper_NNN.md` with:
    - Key Findings (**each tagged [MEASURED], [INFERRED], [HYPOTHESIZED], or [ARCHITECTURAL]**)
-   - Quantitative Results table (ONLY directly reported numbers)
+   - **Mandatory Metrics Table** (EVERY paper MUST have this — use "NOT REPORTED" for missing fields):
+     ```markdown
+     ## Mandatory Metrics Extraction
+     | Metric | Value | Unit | Classification | Source |
+     |--------|-------|------|----------------|--------|
+     | TTFA / FPL | ??? | ms | MEASURED / SIMULATED / ARCHITECTURAL / NOT REPORTED | Table/Figure/Section |
+     | RTF | ??? | ratio | MEASURED / NOT REPORTED | |
+     | Chunk size / frame rate | ??? | ms or Hz | MEASURED / ARCHITECTURAL | |
+     | p95/p99 latency | ??? | ms | MEASURED / NOT REPORTED | |
+     | MOS / MOS-N | ??? | 1-5 | MEASURED / NOT REPORTED | |
+     | WER | ??? | % | MEASURED / NOT REPORTED | |
+     | UTMOS | ??? | score | MEASURED / NOT REPORTED | |
+     | SECS / SPK-SIM | ??? | cosine | MEASURED / NOT REPORTED | |
+     | Parameters | ??? | M or B | ARCHITECTURAL | |
+     | GPU type | ??? | name | MEASURED / NOT REPORTED | |
+     ```
+     **Latency classification is CRITICAL:**
+     - **MEASURED** = actual wall-clock on real hardware with GPU type reported
+     - **SIMULATED** = estimated from FLOPs, architecture, or theoretical analysis
+     - **ARCHITECTURAL** = design allows it in principle but no empirical validation
+     - A paper claiming "low latency" without reporting ms on specific hardware = ARCHITECTURAL, not MEASURED
    - Methodology (dataset, metrics, baselines, evaluation setting)
    - Limitations (author-acknowledged + identified + domain transfer risks + confounds)
    - Relevance to topic (with transfer assumptions explicit)
@@ -246,15 +306,28 @@ This choice governs the epistemic standards for the rest of the pipeline.
 1. Read all analysis files in `{{OUTPUT_DIR}}/state/analyses/`
 2. Read all "finding" type agent messages for cross-paper observations
 3. **Generate the structured corpus table** at `{{OUTPUT_DIR}}/state/corpus_table.md`:
+
+   The table MUST classify every paper on THREE orthogonal axes. This is a comparative framework, not a list of papers.
+
    ```markdown
    # Structured Corpus Table
 
-   | Paper | Year | Modality | Method Type | Threat Types | Eval Setting | Measured Latency? | Measured Recall? | Key Metric | Evidence Strength |
-   |-------|------|----------|-------------|-------------|-------------|-------------------|-----------------|------------|-------------------|
-   | [@key] | 2024 | text | classifier | jailbreak | ToxicChat | Yes: 12ms | Yes: 0.94 F1 | F1 | MEASURED |
-   | [@key] | 2025 | voice | architecture | — | design only | No | No | — | ARCHITECTURAL |
+   | Paper | Year | Alignment Strategy | Generation Regime | Streaming Strategy | TTFA (ms) | RTF | MOS/UTMOS | WER (%) | GPU | Evidence Strength |
+   |-------|------|--------------------|-------------------|--------------------|-----------|-----|-----------|---------|-----|-------------------|
+   | [@key] | 2025 | Monotonic duration | AR codec LM | True early emission | 102 [M] | 0.17 [M] | 4.07 [M] | 3.15 [M] | A100 | MEASURED |
+   | [@key] | 2026 | Synchronous dual | Flow matching LM | Synchronous streaming | ? [NR] | ? [NR] | ? [NR] | ? [NR] | ? | ARCHITECTURAL |
    ```
-   This table is REQUIRED in the final paper. It ensures readers can assess evidence quality at a glance.
+
+   **Legend:** [M]=MEASURED, [S]=SIMULATED, [A]=ARCHITECTURAL, [NR]=NOT REPORTED
+
+   **Axis definitions (adapt to topic — these are TTS-specific examples):**
+   - **Alignment Strategy**: how text maps to audio frames (monotonic, TMT, interleaved, boundary-aware, synchronous, none)
+   - **Generation Regime**: how audio tokens are produced (AR, NAR, masked, flow/diffusion, codec LM)
+   - **Streaming Strategy**: when audio emission begins (no streaming, pseudo-streaming, true early emission, synchronous)
+
+   **If CLAUDE.md defines a mandatory taxonomy, use it.** The axes in CLAUDE.md override these defaults.
+
+   This table is REQUIRED in the final paper. It ensures readers can assess evidence quality at a glance AND compare methods systematically across dimensions.
 4. **Build the cross-paper evidence matrix** from the evidence database:
    ```bash
    python3 {{PLUGIN_ROOT}}/scripts/paper_database.py evidence-matrix --db-path {{OUTPUT_DIR}}/research.db
@@ -472,6 +545,12 @@ Output `<promise>{{COMPLETION_PROMISE}}</promise>`
 ```bash
 python3 {{PLUGIN_ROOT}}/scripts/search_arxiv.py --query "QUERY" --max-results N [--category cs.CL]
 python3 {{PLUGIN_ROOT}}/scripts/search_semantic_scholar.py --query "QUERY" --max-results N [--year 2023-2026]
+
+# Snowball search (forward: who cites this paper)
+python3 {{PLUGIN_ROOT}}/scripts/search_semantic_scholar.py citations --paper-id "ArXiv:ARXIV_ID" --max-results 20
+
+# Snowball search (backward: what this paper cites)
+python3 {{PLUGIN_ROOT}}/scripts/search_semantic_scholar.py references --paper-id "ArXiv:ARXIV_ID" --max-results 20
 ```
 
 ### Content Fetching

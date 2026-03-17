@@ -20,6 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Paper versioning: `final-v{N}.md` snapshots before each revision round (#REVIEW-9)
 - Phase 8 (revision) in stop-hook state machine with review-wait mechanism (#REVIEW-10)
 - 24 tests for review feature: CRUD, CLI, stats, schema validation (`tests/test_review_feature.py`) (#REVIEW-11)
+- Snowball search commands in `search_semantic_scholar.py`: `citations` (forward) and `references` (backward) via S2 Graph API (#DISC-7)
+
+### Changed
+- Phase 1 discovery now requires minimum 8 diverse queries: solution-oriented, problem-oriented, AND component queries (#DISC-1)
+- Phase 1 now mandates snowball search (forward + backward citations) on top 5 papers — catches papers using different terminology (#DISC-2)
+- Rate-limited queries must be retried, not skipped — skipped queries are automatic Phase 1 quality gate FAIL (#DISC-3)
+- Default max results increased from 10 to 20 for both ArXiv and Semantic Scholar scripts (#DISC-4)
+- Semantic Scholar retry logic strengthened: 5 retries (was 3), 5s base delay (was 2s) (#DISC-5)
+- Phase 1 quality gate threshold raised from 0.6 to 0.7 with new dimensions: query diversity (0.25), snowball search (0.20) (#DISC-6)
+- Phase 8 quality gate threshold raised from 0.75 to 0.80 with mandatory numeric verification dimension (0.25) (#REVIEW-12)
+- Revision-writer now BLOCKS on unverified numbers — must run experiment or remove claim, cannot proceed (#REVIEW-13)
+- EXPERIMENT action type now requires actual execution on available hardware, not just design (#REVIEW-14)
 
 ### Added (previous)
 - Experimentation mode via `--experiments` flag — writes code, executes benchmarks, trains models, stores empirical results (#EXP-1)
