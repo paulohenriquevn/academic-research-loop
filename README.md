@@ -1,12 +1,48 @@
 # Academic Research Loop
 
-Autonomous academic research pipeline for Claude Code. Give it a topic, walk away, and come back to a publication-quality literature survey with structured citations, quantitative evidence matrices, and LaTeX export.
+Autonomous academic research pipeline for Claude Code. Give it a topic, and it produces a publication-quality literature survey with PRISMA methodology, quantitative evidence matrices, SVG figures, and LaTeX export. Optionally, it maps literature to your codebase and runs real experiments.
 
-Combines four ideas:
+Combines five ideas:
 - **[Ralph Wiggum](https://ghuntley.com/ralph/)** — self-referential AI loop via stop hook
-- **[Autoresearch](https://github.com/karpathy/autoresearch)** (Karpathy) — autonomous AI experimentation with keep/discard
+- **[Autoresearch](https://github.com/karpathy/autoresearch)** (Karpathy) — autonomous experimentation: write code, execute, evaluate, keep/discard
 - **[Autosearch](https://github.com/FullStackRetrieval-com/RetrievalTutorials)** — multi-agent academic research teams
 - **[PRISMA](https://www.prisma-statement.org/)** — systematic review methodology for reproducible search
+- **Epistemic rigor** — every claim tagged [MEASURED]/[INFERRED]/[HYPOTHESIZED], enforced across the pipeline
+
+## Installation
+
+### Step 1: Add the marketplace
+
+```
+/plugin marketplace add paulohenriquevn/academic-research-loop
+```
+
+### Step 2: Install the plugin
+
+```
+/plugin install academic-research-loop@academic-research-loop
+```
+
+Choose the scope when prompted: **project** (all collaborators), **user** (all your projects), or **local** (just you, gitignored).
+
+### Alternative: Manual settings
+
+Add to `~/.claude/settings.json`:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "academic-research-loop": {
+      "source": {
+        "source": "github",
+        "repo": "paulohenriquevn/academic-research-loop"
+      }
+    }
+  }
+}
+```
+
+Then restart Claude Code and run `/plugin install academic-research-loop@academic-research-loop`.
 
 ## Quick Start
 
@@ -16,9 +52,15 @@ Combines four ideas:
 
 # Applied research — map literature to your codebase
 /research-loop "Voice agent safety" --codebase ~/projects/my-voice-app
+
+# With experiments — write code, run benchmarks, measure results
+/research-loop "Lightweight toxicity classifiers" --experiments --min-papers 5
+
+# Full mode — applied research + experiments
+/research-loop "Streaming safety" --codebase ~/projects/app --experiments
 ```
 
-That's it. Claude iterates through 7 phases autonomously: searching real academic databases, extracting quantitative evidence, analyzing papers with epistemic rigor, and writing a complete survey.
+The agent reads your project's `CLAUDE.md` and `README.md` on the first iteration to understand context, hypotheses, and priorities before starting research.
 
 ## How It Works
 
@@ -27,8 +69,10 @@ That's it. Claude iterates through 7 phases autonomously: searching real academi
      │
      ▼
 ┌──────────────────────────────────────────────────────────────┐
+│  Step 0: Read CLAUDE.md + README.md for project context      │
+├──────────────────────────────────────────────────────────────┤
 │  Phase 1: Discovery      (max 3 iter)                        │
-│  PRISMA search protocol + Arxiv + Semantic Scholar           │
+│  PRISMA search protocol + ArXiv + Semantic Scholar           │
 ├──────────────────────────────────────────────────────────────┤
 │  Phase 2: Screening      (max 2 iter)                        │
 │  Score candidates 1-5, document screening funnel             │
@@ -36,8 +80,8 @@ That's it. Claude iterates through 7 phases autonomously: searching real academi
 │  Phase 3: Analysis       (max 5 iter)                        │
 │  Deep-read papers + extract ALL quantitative evidence        │
 ├──────────────────────────────────────────────────────────────┤
-│  Phase 4: Synthesis      (max 3 iter)                        │
-│  Themes, evidence matrix, corpus table, gap analysis         │
+│  Phase 4: Synthesis      (max 3 iter, or 6 with experiments) │
+│  Themes, evidence matrix, corpus table, experiments          │
 ├──────────────────────────────────────────────────────────────┤
 │  Phase 5: Writing        (max 4 iter)                        │
 │  Draft with epistemic calibration + evidence tables          │
@@ -51,25 +95,26 @@ That's it. Claude iterates through 7 phases autonomously: searching real academi
      │
      ▼
   research-output/
-  ├── final.md          ← Complete survey (Markdown)
-  ├── final.tex         ← LaTeX (submission-ready)
-  ├── figures/           ← SVG figures + generation scripts
-  └── research.db       ← All evidence in structured DB
+  ├── final.md            ← Complete survey (Markdown)
+  ├── final.tex           ← LaTeX (submission-ready)
+  ├── figures/             ← SVG figures + generation scripts
+  ├── experiments/         ← Experiment scripts + results (with --experiments)
+  └── research.db         ← All evidence in structured DB
 ```
 
-Each iteration, the stop hook intercepts Claude's exit and re-injects the research prompt. Phases advance automatically via completion markers or timeout. Quality gates repeat failed phases with evaluator feedback (Autoresearch keep/discard).
+Each iteration, the stop hook intercepts Claude's exit and re-injects the research prompt. Phases advance via completion markers or timeout. Quality gates repeat failed phases with evaluator feedback (Autoresearch keep/discard).
 
-## Two Modes
+## Three Modes
 
-### Literature Survey (default)
+### 1. Literature Survey (default)
 
 ```bash
 /research-loop "RAG techniques for question answering" --min-papers 15
 ```
 
-Produces a standard academic survey with PRISMA methodology, structured corpus table, evidence matrices, and epistemic calibration on every claim.
+Produces an academic survey with PRISMA methodology, structured corpus table, evidence matrices, and epistemic calibration on every claim.
 
-### Applied Research (`--codebase`)
+### 2. Applied Research (`--codebase`)
 
 ```bash
 /research-loop "Voice agent safety" --codebase ~/projects/my-voice-app
@@ -82,11 +127,30 @@ Maps literature to a specific codebase. Every phase adapts:
 | 1 Discovery | Search by topic | **Codebase analysis first** → queries derived from components |
 | 2 Screening | Score by relevance | Score includes **component mapping** |
 | 3 Analysis | Paper findings | Findings + **"which module does this help?"** |
-| 4 Synthesis | Themes and gaps | **Gap matrix**: component × papers × severity |
+| 4 Synthesis | Themes and gaps | **Gap matrix**: component × papers × severity (Solved/Partial/Open/Conflicting) |
 | 5 Writing | Survey paper | + **Implementation recs** + **proposed benchmarks** |
 | 7 Polish | 3 figures | + **Architecture-paper mapping diagram** |
 
-Additional output: `state/codebase_analysis.md` (component map) and `state/gap_analysis.md` (gap matrix with Solved/Partial/Open/Conflicting classification).
+Additional output: `state/codebase_analysis.md` and `state/gap_analysis.md`.
+
+### 3. Experimentation (`--experiments`)
+
+```bash
+/research-loop "Lightweight toxicity classifiers" --experiments --min-papers 5
+```
+
+Runs real experiments on your machine. The system:
+
+1. **experiment-designer** — reads evidence gaps, checks your hardware (GPU/CPU, VRAM, packages), proposes feasible experiments with runtime estimates
+2. **experiment-coder** (Autoresearch pattern) — writes Python scripts, executes them, captures metrics, retries on failure (max 3)
+3. Results stored as `evidence_type="empirical"` — distinct from paper-reported `"measured"` evidence
+4. Paper includes **"Empirical Validation"** section with paper-reported vs locally-measured results side by side
+
+Combine with `--codebase` for the full pipeline:
+
+```bash
+/research-loop "Streaming safety" --codebase ~/projects/app --experiments
+```
 
 ## Commands
 
@@ -94,11 +158,14 @@ Additional output: `state/codebase_analysis.md` (component map) and `state/gap_a
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--max-iterations N` | 50 | Max global iterations before auto-stop |
 | `--min-papers N` | 10 | Minimum papers to discover |
+| `--max-iterations N` | 50 | Max global iterations before auto-stop |
 | `--output-dir PATH` | `./research-output` | Where output files go |
-| `--codebase PATH` | *(off)* | Enable applied research — analyze this project |
+| `--codebase PATH` | *(off)* | Enable applied research — analyze this project and map literature to its components |
+| `--experiments` | *(off)* | Enable experimentation — write code, run benchmarks, train models, measure results |
 | `--completion-promise TEXT` | `"RESEARCH COMPLETE"` | Promise text to signal completion |
+
+Flags combine freely: `--codebase` + `--experiments` runs the full pipeline.
 
 ### `/research-status`
 
@@ -122,15 +189,24 @@ research-output/
 │   ├── figure_1_timeline.svg
 │   ├── figure_2_performance.svg
 │   ├── figure_3_taxonomy.svg
-│   └── gen_figure_*.py          # Scripts that generated each figure
+│   └── gen_figure_*.py
+├── experiments/                 # (with --experiments)
+│   ├── exp_1_name.py            # Experiment scripts
+│   ├── results/
+│   │   ├── exp_1_name.json      # Structured results
+│   │   └── exp_1_name.log       # Execution logs
+│   └── experiment_report.md
 └── state/
     ├── methodology.md           # PRISMA search protocol + screening funnel
     ├── corpus_table.md          # Structured corpus table (evidence strength per paper)
-    ├── evidence_matrix.md       # Cross-paper evidence comparison (MEASURED only)
+    ├── evidence_matrix.md       # Cross-paper comparison (MEASURED only)
+    ├── experiment_plan.md       # (with --experiments) designed by experiment-designer
+    ├── codebase_analysis.md     # (with --codebase) component map
+    ├── gap_analysis.md          # (with --codebase) gap matrix
+    ├── validation_report.json   # Cross-validation results
     ├── candidates.json          # All discovered papers
     ├── shortlist.json           # Papers that passed screening
     ├── outline.md               # Survey structure
-    ├── validation_report.json   # Cross-validation results
     ├── analyses/                # Per-paper analysis files
     ├── evidence/                # Per-paper quantitative evidence extraction
     └── meetings/                # Group meeting minutes
@@ -138,7 +214,7 @@ research-output/
 
 ## Epistemic Rigor System
 
-The pipeline enforces evidence discipline at 6 points — the primary lesson from peer review feedback.
+The pipeline enforces evidence discipline at 6 points — designed in response to MIT peer review feedback.
 
 ### Evidence Classification
 
@@ -155,38 +231,37 @@ Every finding in every paper analysis is tagged:
 
 ```
 Phase 3: For EACH paper
-  ├── paper-analyzer    → findings tagged [MEASURED/INFERRED/HYPOTHESIZED]
+  ├── paper-analyzer     → findings tagged [MEASURED/INFERRED/HYPOTHESIZED]
   └── evidence-extractor → EVERY number extracted:
-                           metric, value, dataset, baseline, conditions,
-                           source_location (Table N, Figure M)
-                           → stored in evidence table (DB)
-                           → "What Was NOT Measured" documented
+                            metric, value, dataset, baseline, conditions,
+                            source_location (Table N, Figure M)
+                            → stored in evidence table (DB)
+                            → "What Was NOT Measured" documented
 
 Phase 4: Synthesis
-  ├── corpus_table.md   → all papers with evidence_strength column
-  ├── evidence_matrix   → cross-paper comparison (MEASURED only)
-  └── experimental_gaps → what nobody measured
+  ├── corpus_table.md    → all papers with evidence_strength column
+  ├── evidence_matrix    → cross-paper comparison (MEASURED only)
+  ├── experimental_gaps  → what nobody measured
+  └── experiments        → (with --experiments) run code to fill gaps
 
 Phase 5: Writing
   └── comparison tables use ONLY [MEASURED] values
       estimated values labeled "est." — NEVER presented as results
 
 Phase 6: Review
-  ├── fact-checker  → flags "demonstrates" on [HYPOTHESIZED] claims
-  └── reviewer      → flags heterogeneous comparisons, missing confounds
+  ├── fact-checker   → flags "demonstrates" on [HYPOTHESIZED] claims
+  └── reviewer       → flags heterogeneous comparisons, missing confounds
 ```
 
 ### PRISMA-like Methodology
 
 Phase 1 documents the search protocol before any papers are found:
-- Databases searched (ArXiv, Semantic Scholar) and databases NOT searched
+- Databases searched (ArXiv, Semantic Scholar) and databases NOT searched (with reasons)
 - Every query string with date and result count
 - Inclusion/exclusion criteria
 - Screening funnel: identified → deduplicated → screened → shortlisted → excluded (with reasons)
 
 ### Quality Gate Dimensions
-
-The quality evaluator scores epistemic rigor explicitly:
 
 | Dimension | What it checks |
 |-----------|---------------|
@@ -196,7 +271,7 @@ The quality evaluator scores epistemic rigor explicitly:
 | `confound_treatment` | Speculative hypotheses have limitation analysis |
 | `methodology_documentation` | Search protocol is reproducible |
 
-## Research Team
+## Research Team (22 Agents)
 
 ### Core Team (Every Iteration)
 
@@ -225,10 +300,15 @@ The quality evaluator scores epistemic rigor explicitly:
 | `figure-generator` | 7 | Writes scripts to generate SVG figures (Autoresearch) |
 | `cross-validator` | 7 | Writes validation scripts, auto-fixes issues |
 | `latex-exporter` | 7 | Writes Markdown-to-LaTeX converter |
-| `codebase-analyzer` | 1* | Reads codebase, extracts component map |
-| `gap-analyzer` | 4* | Maps literature to codebase gaps |
 
-*\* Applied research mode only (`--codebase`)*
+### Mode-Specific Agents
+
+| Agent | Mode | Purpose |
+|-------|------|---------|
+| `codebase-analyzer` | `--codebase` | Reads project, extracts component map and research questions |
+| `gap-analyzer` | `--codebase` | Maps literature to codebase gaps (Solved/Partial/Open/Conflicting) |
+| `experiment-designer` | `--experiments` | Checks hardware, designs feasible experiments with runtime estimates |
+| `experiment-coder` | `--experiments` | Autoresearch: writes scripts, executes, evaluates, keep/discard |
 
 ## Tools
 
@@ -260,7 +340,7 @@ python3 scripts/paper_database.py add-evidence --db-path research.db \
 python3 scripts/paper_database.py query-evidence --db-path research.db --metric F1
 python3 scripts/paper_database.py query-evidence --db-path research.db --evidence-type measured
 
-# Build cross-paper evidence matrix (MEASURED only)
+# Cross-paper evidence matrix (MEASURED only)
 python3 scripts/paper_database.py evidence-matrix --db-path research.db
 
 # Sync bibtex keys from .bib to DB
@@ -300,50 +380,56 @@ python3 -m pytest tests/ -v
 # Bash tests (31 tests)
 bash tests/test_stop_hook.sh
 bash tests/test_setup_script.sh
-
-# Total: 186 tests
 ```
 
 | Test file | Tests | Coverage |
 |-----------|-------|----------|
-| `test_paper_database.py` | 36 | CRUD, evidence, quality scores, messages, stats |
+| `test_paper_database.py` | 36 | CRUD, evidence table, quality scores, messages, stats |
 | `test_manage_citations.py` | 44 | BibTeX generation, dedup, validation, sync-db |
 | `test_svg_utils.py` | 33 | SVG primitives, axes, legends, nice_ticks |
 | `test_search_arxiv.py` | 10 | Query building, XML parsing, fetch |
 | `test_search_semantic_scholar.py` | 9 | Response parsing, API key, filters |
 | `test_fact_check.py` | 10 | Claim extraction, support verification |
 | `test_fetch_paper_content.py` | 10 | HTML extraction, fallback strategies |
-| `test_stop_hook.sh` | 13 | Phase machine, quality gates, corruption |
+| `test_stop_hook.sh` | 13 | Phase machine, quality gates, corruption handling |
 | `test_setup_script.sh` | 18 | Argument parsing, state file, validation |
 
 ## Local Development
 
-The plugin runs from a **cached copy**. Sync after changes:
+The plugin runs from a **cached copy**. After editing source files:
 
 ```bash
+# 1. Run tests
+python3 -m pytest tests/ -v
+
+# 2. Sync to cache
 rsync -av \
   --exclude='.git' --exclude='__pycache__' --exclude='.pytest_cache' \
   ~/Projetos/usemacaw/academic-research-loop/ \
   ~/.claude/plugins/cache/academic-research-loop/academic-research-loop/1.0.0/
-```
 
-Workflow: edit → `pytest tests/` → rsync → test in Claude Code.
+# 3. Restart Claude Code session to load changes
+```
 
 ## Design Decisions
 
 **Why Ralph Wiggum?** No external orchestrator needed. Claude Code's hook system handles the loop natively. The agent sees its own previous work each iteration.
 
-**Why Autoresearch keep/discard?** Autonomous research without evaluation is noise. Failed phases retry with feedback. Phase 7 agents (figure-generator, cross-validator, latex-exporter) write code → execute → evaluate → iterate within themselves.
+**Why Autoresearch keep/discard?** Autonomous research without evaluation is noise. Failed phases retry with feedback. Phase 7 agents (figure-generator, cross-validator, latex-exporter) and experiment-coder all write code, execute, evaluate, and iterate within themselves.
 
-**Why evidence extraction?** Peer review taught us: a survey that says "Paper X achieves good results" is worthless. A survey that says "Paper X achieves 0.94 F1 on ToxicChat (Table 2, 8B model, 4-bit, A100)" is science. Every number traces to a source location.
+**Why evidence extraction?** Peer review taught us: "Paper X achieves good results" is worthless. "Paper X achieves 0.94 F1 on ToxicChat (Table 2, 8B model, 4-bit, A100)" is science. Every number traces to a source location.
 
-**Why epistemic classification?** The most common failure in AI surveys is presenting estimates as results. Tagging [MEASURED]/[INFERRED]/[HYPOTHESIZED] at extraction time prevents overclaiming at writing time. The fact-checker enforces it.
+**Why epistemic classification?** The most common failure in AI surveys is presenting estimates as results. Tagging [MEASURED]/[INFERRED]/[HYPOTHESIZED] at extraction time prevents overclaiming at writing time. The fact-checker and academic-reviewer enforce it.
 
-**Why PRISMA methodology?** "We found 18 relevant papers" means nothing without knowing how. Documenting queries, databases, criteria, and the screening funnel makes the review reproducible and defensible.
+**Why PRISMA?** "We found 18 relevant papers" means nothing without knowing how. Documenting queries, databases, criteria, and the screening funnel makes the review reproducible and defensible.
 
-**Why SQLite?** Five tables (papers, analyses, evidence, quality_scores, agent_messages) with proper foreign keys. WAL mode for concurrent access. Zero pip dependencies.
+**Why experiments?** A survey without empirical validation is speculation. With `--experiments`, the system designs experiments based on evidence gaps, runs them on your hardware, and includes the results alongside paper-reported evidence — clearly distinguished as `[EMPIRICAL]` vs `[MEASURED]`.
 
-**Why 19 agents?** Screening requires different judgment than writing, which requires different skills than evidence extraction, which requires different rigor than fact-checking. Each agent has a focused rubric.
+**Why project context?** The agent reads `CLAUDE.md` and `README.md` on the first iteration. If your project defines hypotheses, priorities, or constraints, the research adapts to them from the start.
+
+**Why SQLite?** Six tables (papers, analyses, evidence, quality_scores, agent_messages, schema_version) with proper foreign keys. WAL mode for concurrent access. Zero pip dependencies.
+
+**Why 22 agents?** Screening requires different judgment than writing, which requires different skills than evidence extraction, which requires different rigor than fact-checking, which requires different expertise than experiment design. Each agent has a focused rubric.
 
 ## Requirements
 
@@ -351,14 +437,15 @@ Workflow: edit → `pytest tests/` → rsync → test in Claude Code.
 - Python 3.10+
 - Internet access (ArXiv and Semantic Scholar APIs)
 - `jq` (used by stop hook for JSON processing)
+- For `--experiments`: `torch`, `transformers`, `datasets` (pip packages — installed by experiment-coder as needed)
 
-## Acknowledgments & References
+## Acknowledgments
 
 ### [Autoresearch](https://github.com/karpathy/autoresearch) — Andrej Karpathy
 
 > *"One day, frontier AI research used to be done by meat computers in between eating, sleeping, having other fun, and synchronizing once in a while using sound wave interconnect in the ritual of 'group meeting'. That era is long gone."*
 
-Our quality gate system and Phase 7 code-writing agents are direct adaptations of the Autoresearch pattern.
+Our quality gates, experiment-coder, and Phase 7 code-writing agents are direct adaptations of the Autoresearch pattern.
 
 ### [Ralph Wiggum Technique](https://ghuntley.com/ralph/) — Geoffrey Huntley
 
@@ -366,7 +453,7 @@ The stop hook loop mechanism. Our phase-aware extension adds a 7-phase state mac
 
 ### [Autosearch](https://github.com/FullStackRetrieval-com/RetrievalTutorials) — Multi-Agent Academic Research
 
-The multi-agent architecture inspiration: specialized roles with mandatory group meetings and inter-agent message protocol.
+The multi-agent architecture: specialized roles with mandatory group meetings and inter-agent message protocol.
 
 ### Additional Inspirations
 
