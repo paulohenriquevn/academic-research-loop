@@ -214,6 +214,88 @@ if [[ "$PHASE_ADVANCED" != "true" ]] && [[ "$QUALITY_FAILED" != "true" ]] && [[ 
   FORCED_ADVANCE=true
 fi
 
+# ---------------------------------------------------------------------------
+# HARD BLOCKS — verify mandatory work BEFORE allowing phase advancement
+# The agent CANNOT bypass these. No evidence = no advancement. Period.
+# ---------------------------------------------------------------------------
+HARD_BLOCK=false
+HARD_BLOCK_MSG=""
+
+if [[ "$PHASE_ADVANCED" == "true" ]]; then
+  # Resolve OUTPUT_DIR to absolute path for reliable DB access
+  if [[ "$OUTPUT_DIR" == ./* ]] || [[ "$OUTPUT_DIR" != /* ]]; then
+    ABS_OUTPUT_DIR="$(pwd)/$OUTPUT_DIR"
+  else
+    ABS_OUTPUT_DIR="$OUTPUT_DIR"
+  fi
+  DB_PATH="$ABS_OUTPUT_DIR/research.db"
+
+  # Phase 3 → 4: Evidence table MUST have entries
+  if [[ $CURRENT_PHASE -eq 3 ]]; then
+    if [[ -f "$DB_PATH" ]]; then
+      EVIDENCE_COUNT=$(python3 -c "import sqlite3; db=sqlite3.connect('$DB_PATH'); print(db.execute('SELECT COUNT(*) FROM evidence').fetchone()[0])" 2>/dev/null || echo "0")
+    else
+      EVIDENCE_COUNT=0
+    fi
+    if [[ "$EVIDENCE_COUNT" -eq 0 ]]; then
+      HARD_BLOCK=true
+      HARD_BLOCK_MSG="🚫 HARD BLOCK: Phase 3 cannot advance — evidence table has 0 entries (DB: $DB_PATH). You MUST run the evidence-extractor agent and store quantitative results via paper_database.py add-evidence for EVERY analyzed paper. The paper is WORTHLESS without verified evidence in the database. Do NOT emit PHASE_3_COMPLETE until evidence count > 0."
+    fi
+  fi
+
+  # Phase 4 → 5: If experiments enabled, experiment scripts AND results MUST exist
+  if [[ $CURRENT_PHASE -eq 4 ]] && [[ "$EXPERIMENTS_ENABLED" == "true" ]]; then
+    EXP_COUNT=$(find "$ABS_OUTPUT_DIR/experiments" -name "exp*.py" 2>/dev/null | wc -l)
+    if [[ "$EXP_COUNT" -eq 0 ]]; then
+      HARD_BLOCK=true
+      HARD_BLOCK_MSG="🚫 HARD BLOCK: Phase 4 cannot advance — experiments_enabled=true but 0 experiment scripts found in $ABS_OUTPUT_DIR/experiments/. You MUST run experiment-designer + experiment-coder to create AND EXECUTE experiments. Experiments are NOT optional when --experiments is set."
+    else
+      RESULT_COUNT=$(find "$ABS_OUTPUT_DIR/experiments/results" -name "*.json" -o -name "*.log" 2>/dev/null | wc -l)
+      if [[ "$RESULT_COUNT" -eq 0 ]]; then
+        HARD_BLOCK=true
+        HARD_BLOCK_MSG="🚫 HARD BLOCK: Phase 4 cannot advance — $EXP_COUNT experiment scripts exist but 0 results in $ABS_OUTPUT_DIR/experiments/results/. You MUST EXECUTE the experiments. Run each exp_*.py and store results as evidence_type='empirical'."
+      fi
+    fi
+  fi
+
+  # Phase 4 → 5: Evidence table must have grown (experiments add empirical evidence)
+  if [[ $CURRENT_PHASE -eq 4 ]] && [[ "$EXPERIMENTS_ENABLED" == "true" ]] && [[ "$HARD_BLOCK" != "true" ]]; then
+    if [[ -f "$DB_PATH" ]]; then
+      EMPIRICAL_COUNT=$(python3 -c "import sqlite3; db=sqlite3.connect('$DB_PATH'); print(db.execute(\"SELECT COUNT(*) FROM evidence WHERE evidence_type='empirical'\").fetchone()[0])" 2>/dev/null || echo "0")
+    else
+      EMPIRICAL_COUNT=0
+    fi
+    if [[ "$EMPIRICAL_COUNT" -eq 0 ]]; then
+      HARD_BLOCK=true
+      HARD_BLOCK_MSG="🚫 HARD BLOCK: Phase 4 cannot advance — experiments ran but 0 empirical evidence entries in DB. You MUST store experiment results via paper_database.py add-evidence with evidence_type='empirical'."
+    fi
+  fi
+
+  # ALL gated phases (2-6): Quality scores MUST exist in DB
+  if [[ "$HARD_BLOCK" != "true" ]] && [[ $CURRENT_PHASE -ge 2 ]] && [[ $CURRENT_PHASE -le 6 ]]; then
+    HAS_GATE=${PHASE_QUALITY_GATE[$CURRENT_PHASE]:-0}
+    if [[ "$HAS_GATE" == "1" ]]; then
+      if [[ -f "$DB_PATH" ]]; then
+        QS_EXISTS=$(python3 -c "import sqlite3; db=sqlite3.connect('$DB_PATH'); print(db.execute('SELECT COUNT(*) FROM quality_scores WHERE phase=$CURRENT_PHASE').fetchone()[0])" 2>/dev/null || echo "0")
+      else
+        QS_EXISTS=0
+      fi
+      if [[ "$QS_EXISTS" -eq 0 ]]; then
+        HARD_BLOCK=true
+        HARD_BLOCK_MSG="🚫 HARD BLOCK: Phase $CURRENT_PHASE ($PHASE_NAME) cannot advance — no quality score in DB for this phase. You MUST: (1) run quality-evaluator agent, (2) output <!-- QUALITY_SCORE:X.XX --> <!-- QUALITY_PASSED:1 -->, (3) record via paper_database.py add-quality-score --phase $CURRENT_PHASE."
+      fi
+    fi
+  fi
+
+  # If hard blocked, prevent advancement and repeat the phase
+  if [[ "$HARD_BLOCK" == "true" ]]; then
+    PHASE_ADVANCED=false
+    FORCED_ADVANCE=false
+    QUALITY_FAILED=false
+    echo "🚫 HARD BLOCK ACTIVATED — Phase $CURRENT_PHASE cannot advance. DB: $DB_PATH" >&2
+  fi
+fi
+
 # Advance phase if needed
 MAX_PHASE=7
 if [[ "$HUMAN_REVIEW_ENABLED" == "true" ]]; then
@@ -307,6 +389,10 @@ fi
 
 if [[ "$QUALITY_FAILED" == "true" ]]; then
   SYSTEM_MSG="$SYSTEM_MSG | ❌ Quality gate FAILED — repeating phase. Review evaluator feedback and improve output."
+fi
+
+if [[ "$HARD_BLOCK" == "true" ]]; then
+  SYSTEM_MSG="$SYSTEM_MSG | $HARD_BLOCK_MSG"
 fi
 
 if [[ "$COMPLETION_PROMISE" != "null" ]] && [[ -n "$COMPLETION_PROMISE" ]]; then

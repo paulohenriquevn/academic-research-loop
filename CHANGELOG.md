@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Snowball search commands in `search_semantic_scholar.py`: `citations` (forward) and `references` (backward) via S2 Graph API (#DISC-7)
 
 ### Changed
+- **CRITICAL:** Stop hook now enforces HARD BLOCKS that prevent phase advancement without mandatory work — agent cannot bypass (#ENFORCE-1):
+  - Phase 3→4: evidence table MUST have >0 entries (evidence-extractor MUST run)
+  - Phase 3→4: quality_scores table MUST have phase 3 entry
+  - Phase 4→5: if experiments_enabled, experiment scripts AND results MUST exist
+  - Phase 2-6: quality_scores MUST exist for every gated phase
+  - Hard blocks override forced advancement (timeout) — the agent is stuck until the work is done
 - Phase 1 discovery now requires minimum 8 diverse queries: solution-oriented, problem-oriented, AND component queries (#DISC-1)
 - Phase 1 now mandates snowball search (forward + backward citations) on top 5 papers — catches papers using different terminology (#DISC-2)
 - Rate-limited queries must be retried, not skipped — skipped queries are automatic Phase 1 quality gate FAIL (#DISC-3)
