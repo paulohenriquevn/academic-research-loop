@@ -532,6 +532,13 @@ Verify all output files exist:
 │   ├── validation_report.json  ← Cross-validation results
 │   ├── analyses/
 │   └── meetings/
+├── poc/                  ← Proof-of-concept system (if --experiments)
+│   ├── main.py           ← Entry point / orchestrator
+│   ├── demo.py           ← Demo script (runs end-to-end)
+│   ├── tests/            ← Component tests (pytest)
+│   ├── requirements.txt
+│   ├── README.md
+│   └── poc_report.md     ← Implementation summary
 └── export_latex.py       ← Script that generated .tex
 ```
 
@@ -624,7 +631,7 @@ Always record your key outputs as messages for downstream agents.
 | **Theory Specialist** | `researcher-theory` | Theoretical frameworks, formal analysis, conceptual contributions |
 | **Applications Specialist** | `researcher-applications` | Real-world impact, use cases, deployment, industry adoption |
 
-Additional specialists are available for specific tasks: `paper-screener`, `paper-analyzer`, `evidence-extractor`, `synthesis-writer`, `outline-architect`, `outline-critic`, `writing-instructor`, `section-writer`, `quality-evaluator`, `fact-checker`, `academic-reviewer`, `figure-generator`, `cross-validator`, `latex-exporter`, `review-handler`, `revision-writer`.
+Additional specialists are available for specific tasks: `paper-screener`, `paper-analyzer`, `evidence-extractor`, `synthesis-writer`, `outline-architect`, `outline-critic`, `writing-instructor`, `section-writer`, `quality-evaluator`, `fact-checker`, `academic-reviewer`, `figure-generator`, `cross-validator`, `latex-exporter`, `review-handler`, `revision-writer`, `poc-architect`, `poc-coder`.
 
 ---
 

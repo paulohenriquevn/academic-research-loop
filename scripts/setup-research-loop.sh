@@ -37,7 +37,8 @@ OPTIONS:
   --codebase <path>              Enable APPLIED RESEARCH mode — analyze this
                                  project and map literature to its components
   --experiments                  Enable EXPERIMENTATION mode — write code,
-                                 run benchmarks, train models, measure results
+                                 run benchmarks, train models, measure results,
+                                 and build a functional proof-of-concept (POC)
   --human-review                 Enable HUMAN REVIEW mode — after Phase 7,
                                  process REVIEW-N.md files and produce revisions
   -h, --help                     Show this help message
@@ -262,6 +263,7 @@ mkdir -p "$OUTPUT_DIR/state/evidence"
 mkdir -p "$OUTPUT_DIR/figures"
 if [[ -n "$EXPERIMENTS_ENABLED" ]]; then
   mkdir -p "$OUTPUT_DIR/experiments/results"
+  mkdir -p "$OUTPUT_DIR/poc/tests"
 fi
 if [[ -n "$HUMAN_REVIEW_ENABLED" ]]; then
   mkdir -p "$OUTPUT_DIR/reviews"
@@ -338,9 +340,9 @@ if [[ -n "$CODEBASE_PATH" ]]; then
 fi
 
 if [[ -n "$EXPERIMENTS_ENABLED" ]]; then
-  MODE_LABEL="${MODE_LABEL} + EXPERIMENTS"
-  PHASE4_EXTRA="${PHASE4_EXTRA} + run experiments"
-  PHASE5_EXTRA="${PHASE5_EXTRA} + empirical results"
+  MODE_LABEL="${MODE_LABEL} + EXPERIMENTS + POC"
+  PHASE4_EXTRA="${PHASE4_EXTRA} + run experiments + build POC"
+  PHASE5_EXTRA="${PHASE5_EXTRA} + empirical results + POC section"
 fi
 
 PHASE8_LINE=""

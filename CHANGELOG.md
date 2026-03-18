@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- POC generation mode — when `--experiments` is enabled, builds a functional proof-of-concept system from experiment results (#POC-1)
+- POC architect agent (`agents/poc-architect.md`) — designs minimal POC architecture from successful experiments, produces `state/poc_spec.md` (#POC-2)
+- POC coder agent (`agents/poc-coder.md`) — Autoresearch pattern: implements POC components, tests, and demo.py; iterates until all tests pass (#POC-3)
+- POC hard blocks in stop-hook: Phase 4 cannot advance without POC files, demo.py, and test files when experiments_enabled=true (#POC-4)
+- 5 tests for POC hard blocks in `tests/test_stop_hook.sh` (#POC-5)
 - Human review mode via `--human-review` flag — processes structured REVIEW-N.md files and produces versioned paper revisions (#REVIEW-1)
 - Review handler agent (`agents/review-handler.md`) — triages review items into 5 action types: REVISE, RE_DISCOVER, RE_SYNTHESIZE, EXPERIMENT, ACKNOWLEDGED (#REVIEW-2)
 - Revision writer agent (`agents/revision-writer.md`) — rewrites specific sections to address feedback while maintaining epistemic rigor (#REVIEW-3)
@@ -22,11 +27,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 24 tests for review feature: CRUD, CLI, stats, schema validation (`tests/test_review_feature.py`) (#REVIEW-11)
 - Snowball search commands in `search_semantic_scholar.py`: `citations` (forward) and `references` (backward) via S2 Graph API (#DISC-7)
 
+### Fixed
+- Re-enabled all 4 hard blocks in stop-hook.sh that were temporarily disabled with `if false &&` — evidence, experiments, empirical evidence, and quality score gates are now fully enforced (#ENFORCE-2)
+- Fixed `find` commands in stop-hook.sh crashing under `set -euo pipefail` when experiment/review directories don't exist — now checks directory existence before `find` (#ENFORCE-3)
+
 ### Changed
+- Phase 4 max iterations increased from 6 to 8 when experiments_enabled=true — accommodates POC design and implementation (#POC-6)
+- Experimentation block template updated with POC generation steps (Step 4a: design, Step 4b: implement) and Phase 5/6 extensions (#POC-7)
+- Quality evaluator Phase 4 rubric adds POC dimensions (functionality 0.10, scope 0.05) when experiments enabled (#POC-8)
+- Research prompt deliverable manifest and agent list include POC agents and poc/ directory (#POC-9)
+- `--experiments` flag help text updated to mention POC generation (#POC-10)
 - **CRITICAL:** Stop hook now enforces HARD BLOCKS that prevent phase advancement without mandatory work — agent cannot bypass (#ENFORCE-1):
   - Phase 3→4: evidence table MUST have >0 entries (evidence-extractor MUST run)
   - Phase 3→4: quality_scores table MUST have phase 3 entry
   - Phase 4→5: if experiments_enabled, experiment scripts AND results MUST exist
+  - Phase 4→5: if experiments_enabled, POC files, demo.py, and tests MUST exist
   - Phase 2-6: quality_scores MUST exist for every gated phase
   - Hard blocks override forced advancement (timeout) — the agent is stuck until the work is done
 - Phase 1 discovery now requires minimum 8 diverse queries: solution-oriented, problem-oriented, AND component queries (#DISC-1)

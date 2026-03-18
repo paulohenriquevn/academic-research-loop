@@ -54,9 +54,15 @@ This implements the Autoresearch keep/discard pattern — work that doesn't meet
 - **Evidence matrix** (0.10): Is the cross-paper evidence matrix present with ONLY measured values?
 - **Threshold:** 0.7
 
+**When experiments_enabled=true, add POC dimensions (adjust other weights proportionally — subtract 0.02 from each of themes, evidence, gaps, structure, corpus, epistemic, matrix):**
+- **POC functionality** (0.10): Does the POC have tests that pass? Does demo.py run and exit 0? Is the POC connected to experiment results (not fabricated)?
+- **POC scope** (0.05): Is the POC minimal and focused? Does it demonstrate 1-3 key findings, not everything?
+
 **AUTOMATIC FAIL conditions:**
 - Corpus table missing the 3-axis taxonomy
 - Any paper in corpus table without classification on all three axes
+- (When experiments_enabled=true) POC has 0 test files → FAIL
+- (When experiments_enabled=true) demo.py does not exist → FAIL
 
 ### Phase 5: Writing
 - **Completeness** (0.2): Are all sections from the outline present?

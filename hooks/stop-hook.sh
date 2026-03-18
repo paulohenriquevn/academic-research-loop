@@ -51,7 +51,7 @@ PHASE_MAX_ITER[8]=5   # revision from human review (triage + actions + revise + 
 
 # Extend Phase 4 for experiments
 if [[ "$EXPERIMENTS_ENABLED" == "true" ]]; then
-  PHASE_MAX_ITER[4]=6   # synthesis + experiment design + experiment execution
+  PHASE_MAX_ITER[4]=8   # synthesis + experiment design + experiment execution + POC design + POC implementation
 fi
 
 # Phase names lookup
@@ -231,9 +231,7 @@ if [[ "$PHASE_ADVANCED" == "true" ]]; then
   DB_PATH="$ABS_OUTPUT_DIR/research.db"
 
   # Evidence table MUST have entries before ANY phase after 3 can advance
-  # TEMPORARILY DISABLED for current run — will be re-enabled after experiments
-  # TODO: Re-enable after REVIEW-0 experiments are complete
-  if false && [[ $CURRENT_PHASE -ge 3 ]]; then
+  if [[ $CURRENT_PHASE -ge 3 ]]; then
     if [[ -f "$DB_PATH" ]]; then
       EVIDENCE_COUNT=$(python3 -c "import sqlite3; db=sqlite3.connect('$DB_PATH'); print(db.execute('SELECT COUNT(*) FROM evidence').fetchone()[0])" 2>/dev/null || echo "0")
     else
@@ -246,14 +244,21 @@ if [[ "$PHASE_ADVANCED" == "true" ]]; then
   fi
 
   # Experiments MUST exist before ANY phase after 4 can advance
-  # TEMPORARILY DISABLED for current run — will be re-enabled after REVIEW-0
-  if false && [[ $CURRENT_PHASE -ge 4 ]] && [[ "$EXPERIMENTS_ENABLED" == "true" ]]; then
-    EXP_COUNT=$(find "$ABS_OUTPUT_DIR/experiments" -name "exp*.py" 2>/dev/null | wc -l)
+  if [[ $CURRENT_PHASE -ge 4 ]] && [[ "$EXPERIMENTS_ENABLED" == "true" ]] && [[ "$HARD_BLOCK" != "true" ]]; then
+    if [[ -d "$ABS_OUTPUT_DIR/experiments" ]]; then
+      EXP_COUNT=$(find "$ABS_OUTPUT_DIR/experiments" -name "exp*.py" 2>/dev/null | wc -l || echo "0")
+    else
+      EXP_COUNT=0
+    fi
     if [[ "$EXP_COUNT" -eq 0 ]]; then
       HARD_BLOCK=true
       HARD_BLOCK_MSG="🚫 HARD BLOCK: Phase 4 cannot advance — experiments_enabled=true but 0 experiment scripts found in $ABS_OUTPUT_DIR/experiments/. You MUST run experiment-designer + experiment-coder to create AND EXECUTE experiments. Experiments are NOT optional when --experiments is set."
     else
-      RESULT_COUNT=$(find "$ABS_OUTPUT_DIR/experiments/results" -name "*.json" -o -name "*.log" 2>/dev/null | wc -l)
+      if [[ -d "$ABS_OUTPUT_DIR/experiments/results" ]]; then
+        RESULT_COUNT=$(find "$ABS_OUTPUT_DIR/experiments/results" -name "*.json" -o -name "*.log" 2>/dev/null | wc -l || echo "0")
+      else
+        RESULT_COUNT=0
+      fi
       if [[ "$RESULT_COUNT" -eq 0 ]]; then
         HARD_BLOCK=true
         HARD_BLOCK_MSG="🚫 HARD BLOCK: Phase 4 cannot advance — $EXP_COUNT experiment scripts exist but 0 results in $ABS_OUTPUT_DIR/experiments/results/. You MUST EXECUTE the experiments. Run each exp_*.py and store results as evidence_type='empirical'."
@@ -262,8 +267,7 @@ if [[ "$PHASE_ADVANCED" == "true" ]]; then
   fi
 
   # Empirical evidence MUST exist before ANY phase after 4 can advance
-  # TEMPORARILY DISABLED for current run
-  if false && [[ $CURRENT_PHASE -ge 4 ]] && [[ "$EXPERIMENTS_ENABLED" == "true" ]] && [[ "$HARD_BLOCK" != "true" ]]; then
+  if [[ $CURRENT_PHASE -ge 4 ]] && [[ "$EXPERIMENTS_ENABLED" == "true" ]] && [[ "$HARD_BLOCK" != "true" ]]; then
     if [[ -f "$DB_PATH" ]]; then
       EMPIRICAL_COUNT=$(python3 -c "import sqlite3; db=sqlite3.connect('$DB_PATH'); print(db.execute(\"SELECT COUNT(*) FROM evidence WHERE evidence_type='empirical'\").fetchone()[0])" 2>/dev/null || echo "0")
     else
@@ -275,9 +279,40 @@ if [[ "$PHASE_ADVANCED" == "true" ]]; then
     fi
   fi
 
+  # POC MUST exist with demo.py and tests before Phase 4 can advance (when experiments enabled)
+  if [[ $CURRENT_PHASE -ge 4 ]] && [[ "$EXPERIMENTS_ENABLED" == "true" ]] && [[ "$HARD_BLOCK" != "true" ]]; then
+    # Check POC directory exists with Python files
+    if [[ -d "$ABS_OUTPUT_DIR/poc" ]]; then
+      POC_FILE_COUNT=$(find "$ABS_OUTPUT_DIR/poc" -maxdepth 1 -name "*.py" 2>/dev/null | wc -l || echo "0")
+    else
+      POC_FILE_COUNT=0
+    fi
+    if [[ "$POC_FILE_COUNT" -eq 0 ]]; then
+      HARD_BLOCK=true
+      HARD_BLOCK_MSG="🚫 HARD BLOCK: Phase 4 cannot advance — experiments_enabled=true but 0 POC files found in $ABS_OUTPUT_DIR/poc/. You MUST run poc-architect + poc-coder to create a functional proof-of-concept system. The POC demonstrates that experiment findings are actionable."
+    else
+      # Check demo.py exists
+      if [[ ! -f "$ABS_OUTPUT_DIR/poc/demo.py" ]]; then
+        HARD_BLOCK=true
+        HARD_BLOCK_MSG="🚫 HARD BLOCK: Phase 4 cannot advance — POC exists but demo.py is missing in $ABS_OUTPUT_DIR/poc/. You MUST create a demo.py that runs end-to-end and exits 0 on success."
+      fi
+      # Check tests directory exists with test files
+      if [[ "$HARD_BLOCK" != "true" ]]; then
+        if [[ -d "$ABS_OUTPUT_DIR/poc/tests" ]]; then
+          POC_TEST_COUNT=$(find "$ABS_OUTPUT_DIR/poc/tests" -name "test_*.py" 2>/dev/null | wc -l || echo "0")
+        else
+          POC_TEST_COUNT=0
+        fi
+        if [[ "$POC_TEST_COUNT" -eq 0 ]]; then
+          HARD_BLOCK=true
+          HARD_BLOCK_MSG="🚫 HARD BLOCK: Phase 4 cannot advance — POC exists but 0 test files in $ABS_OUTPUT_DIR/poc/tests/. You MUST write tests for POC components."
+        fi
+      fi
+    fi
+  fi
+
   # ALL gated phases (2-6): Quality scores MUST exist in DB
-  # TEMPORARILY DISABLED for current run
-  if false && [[ "$HARD_BLOCK" != "true" ]] && [[ $CURRENT_PHASE -ge 2 ]] && [[ $CURRENT_PHASE -le 6 ]]; then
+  if [[ "$HARD_BLOCK" != "true" ]] && [[ $CURRENT_PHASE -ge 2 ]] && [[ $CURRENT_PHASE -le 6 ]]; then
     HAS_GATE=${PHASE_QUALITY_GATE[$CURRENT_PHASE]:-0}
     if [[ "$HAS_GATE" == "1" ]]; then
       if [[ -f "$DB_PATH" ]]; then
@@ -310,7 +345,11 @@ fi
 if [[ "$PHASE_ADVANCED" == "true" ]]; then
   # When transitioning from Phase 7 to Phase 8, check for review files
   if [[ $CURRENT_PHASE -eq 7 ]] && [[ "$HUMAN_REVIEW_ENABLED" == "true" ]]; then
-    REVIEW_COUNT=$(find "$OUTPUT_DIR/reviews" -name "REVIEW-*.md" ! -name "REVIEW-TEMPLATE.md" 2>/dev/null | wc -l)
+    if [[ -d "$OUTPUT_DIR/reviews" ]]; then
+      REVIEW_COUNT=$(find "$OUTPUT_DIR/reviews" -name "REVIEW-*.md" ! -name "REVIEW-TEMPLATE.md" 2>/dev/null | wc -l || echo "0")
+    else
+      REVIEW_COUNT=0
+    fi
     if [[ $REVIEW_COUNT -eq 0 ]]; then
       echo "📝 Research loop: Phase 7 complete. Waiting for human reviews."
       echo "   Place REVIEW-N.md files in: $OUTPUT_DIR/reviews/"

@@ -55,11 +55,57 @@ After experiments complete:
    - Whether results reproduce paper-reported values
    - Limitations of local setup vs. paper's setup
 
+#### Step 4: Build Proof-of-Concept System (POC)
+
+After experiments complete successfully, build a functional POC that demonstrates the key findings as a working system.
+
+##### Step 4a: Design POC Architecture
+
+Launch the **poc-architect** agent:
+1. Reads experiment results and evidence matrix
+2. Selects 1-3 strongest findings to demonstrate
+3. Designs a minimal system architecture reusing experiment code
+4. Produces `{{OUTPUT_DIR}}/state/poc_spec.md`
+
+**Constraints:**
+- POC must be self-contained (no external services, no API keys required)
+- Reuse experiment code — don't rewrite what already works
+- Keep scope minimal — prove the concept, nothing more
+
+##### Step 4b: Implement POC (Autoresearch)
+
+Launch the **poc-coder** agent:
+1. Reads the POC spec
+2. Implements components, reusing experiment code where possible
+3. Writes tests for each component
+4. Writes `demo.py` — an end-to-end demonstration script
+5. Runs tests until all pass (max 3 retries per component)
+6. Runs demo.py to verify end-to-end functionality
+7. Generates POC report at `{{OUTPUT_DIR}}/poc/poc_report.md`
+
+**POC directory structure:**
+```
+{{OUTPUT_DIR}}/poc/
+├── main.py              ← Entry point / orchestrator
+├── *.py                 ← Component files
+├── tests/
+│   └── test_*.py        ← Component tests (pytest)
+├── demo.py              ← Demo script (must exit 0 on success)
+├── requirements.txt
+├── README.md
+└── poc_report.md        ← Summary of implementation and results
+```
+
+**Hard blocks:** Phase 4 CANNOT advance unless:
+- `poc/` directory exists with Python files
+- `poc/demo.py` exists
+- `poc/tests/test_*.py` files exist
+
 ---
 
-### Phase 5 Extension: Writing with Empirical Results
+### Phase 5 Extension: Writing with Empirical Results and POC
 
-The survey paper MUST include an additional section:
+The survey paper MUST include additional sections:
 
 **"Empirical Validation"** (after the evidence summary):
 - Which experiments were run and why (gap-driven)
@@ -67,6 +113,13 @@ The survey paper MUST include an additional section:
 - Results tables with both paper-reported and locally-measured values side by side
 - Analysis: do local results confirm, contradict, or extend paper claims?
 - Limitations of local experiments (hardware, dataset size, statistical significance)
+
+**"Proof-of-Concept System"** (after Empirical Validation):
+- Architecture: components and data flow
+- How it maps to experiment results (which experiment validated which component)
+- Test results summary
+- How to run the demo (`python3 poc/demo.py`)
+- Limitations: what the POC does NOT cover, what would be needed for production
 
 Example table format:
 ```markdown
@@ -85,6 +138,8 @@ The academic-reviewer MUST additionally verify:
 - Paper-reported vs locally-measured results are NEVER conflated
 - Statistical significance is assessed where applicable
 - Failed experiments are documented, not hidden
+- POC tests pass and demo.py runs successfully
+- POC is directly connected to experiment results (components trace to experiments)
 
 ---
 
