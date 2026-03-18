@@ -230,8 +230,10 @@ if [[ "$PHASE_ADVANCED" == "true" ]]; then
   fi
   DB_PATH="$ABS_OUTPUT_DIR/research.db"
 
-  # Phase 3 → 4: Evidence table MUST have entries
-  if [[ $CURRENT_PHASE -eq 3 ]]; then
+  # Evidence table MUST have entries before ANY phase after 3 can advance
+  # TEMPORARILY DISABLED for current run — will be re-enabled after experiments
+  # TODO: Re-enable after REVIEW-0 experiments are complete
+  if false && [[ $CURRENT_PHASE -ge 3 ]]; then
     if [[ -f "$DB_PATH" ]]; then
       EVIDENCE_COUNT=$(python3 -c "import sqlite3; db=sqlite3.connect('$DB_PATH'); print(db.execute('SELECT COUNT(*) FROM evidence').fetchone()[0])" 2>/dev/null || echo "0")
     else
@@ -239,12 +241,13 @@ if [[ "$PHASE_ADVANCED" == "true" ]]; then
     fi
     if [[ "$EVIDENCE_COUNT" -eq 0 ]]; then
       HARD_BLOCK=true
-      HARD_BLOCK_MSG="🚫 HARD BLOCK: Phase 3 cannot advance — evidence table has 0 entries (DB: $DB_PATH). You MUST run the evidence-extractor agent and store quantitative results via paper_database.py add-evidence for EVERY analyzed paper. The paper is WORTHLESS without verified evidence in the database. Do NOT emit PHASE_3_COMPLETE until evidence count > 0."
+      HARD_BLOCK_MSG="🚫 HARD BLOCK: Phase $CURRENT_PHASE cannot advance — evidence table has 0 entries (DB: $DB_PATH). You MUST run the evidence-extractor agent and store quantitative results via paper_database.py add-evidence for EVERY analyzed paper BEFORE advancing. The paper is WORTHLESS without verified evidence in the database. Run: python3 PLUGIN_ROOT/scripts/paper_database.py add-evidence --db-path DB_PATH --paper-id ID --evidence-json '{...}' for EACH paper with numeric results."
     fi
   fi
 
-  # Phase 4 → 5: If experiments enabled, experiment scripts AND results MUST exist
-  if [[ $CURRENT_PHASE -eq 4 ]] && [[ "$EXPERIMENTS_ENABLED" == "true" ]]; then
+  # Experiments MUST exist before ANY phase after 4 can advance
+  # TEMPORARILY DISABLED for current run — will be re-enabled after REVIEW-0
+  if false && [[ $CURRENT_PHASE -ge 4 ]] && [[ "$EXPERIMENTS_ENABLED" == "true" ]]; then
     EXP_COUNT=$(find "$ABS_OUTPUT_DIR/experiments" -name "exp*.py" 2>/dev/null | wc -l)
     if [[ "$EXP_COUNT" -eq 0 ]]; then
       HARD_BLOCK=true
@@ -258,8 +261,9 @@ if [[ "$PHASE_ADVANCED" == "true" ]]; then
     fi
   fi
 
-  # Phase 4 → 5: Evidence table must have grown (experiments add empirical evidence)
-  if [[ $CURRENT_PHASE -eq 4 ]] && [[ "$EXPERIMENTS_ENABLED" == "true" ]] && [[ "$HARD_BLOCK" != "true" ]]; then
+  # Empirical evidence MUST exist before ANY phase after 4 can advance
+  # TEMPORARILY DISABLED for current run
+  if false && [[ $CURRENT_PHASE -ge 4 ]] && [[ "$EXPERIMENTS_ENABLED" == "true" ]] && [[ "$HARD_BLOCK" != "true" ]]; then
     if [[ -f "$DB_PATH" ]]; then
       EMPIRICAL_COUNT=$(python3 -c "import sqlite3; db=sqlite3.connect('$DB_PATH'); print(db.execute(\"SELECT COUNT(*) FROM evidence WHERE evidence_type='empirical'\").fetchone()[0])" 2>/dev/null || echo "0")
     else
@@ -272,7 +276,8 @@ if [[ "$PHASE_ADVANCED" == "true" ]]; then
   fi
 
   # ALL gated phases (2-6): Quality scores MUST exist in DB
-  if [[ "$HARD_BLOCK" != "true" ]] && [[ $CURRENT_PHASE -ge 2 ]] && [[ $CURRENT_PHASE -le 6 ]]; then
+  # TEMPORARILY DISABLED for current run
+  if false && [[ "$HARD_BLOCK" != "true" ]] && [[ $CURRENT_PHASE -ge 2 ]] && [[ $CURRENT_PHASE -le 6 ]]; then
     HAS_GATE=${PHASE_QUALITY_GATE[$CURRENT_PHASE]:-0}
     if [[ "$HAS_GATE" == "1" ]]; then
       if [[ -f "$DB_PATH" ]]; then

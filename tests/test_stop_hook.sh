@@ -240,11 +240,16 @@ echo '{"transcript_path":"'"$TRANSCRIPT"'"}' | bash "$HOOK_SCRIPT" > /dev/null 2
 GLOBAL=$(grep "global_iteration:" "$TEST_DIR/.claude/research-loop.local.md" | sed 's/global_iteration: *//')
 assert_contains "global iteration is 6" "6" "$GLOBAL"
 
-# Test 10: All phases complete without promise → stops
+# Test 10: All phases complete without promise → stops (requires evidence in DB to pass hard block)
 echo ""
 echo "Test: Phase 7 complete without promise stops loop"
 TEST_DIR=$(setup_test "all_phases")
 create_state_file "$TEST_DIR" 7 1 18 50
+# Create DB with evidence so hard block doesn't prevent advancement
+mkdir -p "$TEST_DIR/research-output"
+python3 "$SCRIPT_DIR/../scripts/paper_database.py" init --db-path "$TEST_DIR/research-output/research.db" > /dev/null 2>&1
+python3 "$SCRIPT_DIR/../scripts/paper_database.py" add-paper --db-path "$TEST_DIR/research-output/research.db" --paper-json '{"id":"t1","source":"arxiv","title":"Test","authors":[],"external_ids":{}}' > /dev/null 2>&1
+python3 "$SCRIPT_DIR/../scripts/paper_database.py" add-evidence --db-path "$TEST_DIR/research-output/research.db" --paper-id t1 --evidence-json '{"metric":"TTFA","value":100,"evidence_type":"measured"}' > /dev/null 2>&1
 TRANSCRIPT=$(create_transcript "$TEST_DIR" "Paper is ready. <!-- PHASE_7_COMPLETE -->")
 cd "$TEST_DIR"
 OUTPUT=$(echo '{"transcript_path":"'"$TRANSCRIPT"'"}' | bash "$HOOK_SCRIPT" 2>&1 || true)

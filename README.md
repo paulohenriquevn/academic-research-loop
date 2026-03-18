@@ -23,6 +23,12 @@ Combines five ideas:
 /plugin install academic-research-loop@academic-research-loop
 ```
 
+### Step 3: Reload plugins
+
+```
+/reload-plugins
+```
+
 Choose the scope when prompted: **project** (all collaborators), **user** (all your projects), or **local** (just you, gitignored).
 
 ### Alternative: Manual settings
