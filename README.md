@@ -1,6 +1,6 @@
 # Academic Research Loop
 
-Autonomous academic research pipeline for Claude Code. Give it a topic, and it produces a publication-quality literature survey with PRISMA methodology, quantitative evidence matrices, SVG figures, and LaTeX export. Optionally, it maps literature to your codebase and runs real experiments.
+Autonomous academic research pipeline for Claude Code. Give it a topic, and it produces a publication-quality literature survey with PRISMA methodology, quantitative evidence matrices, SVG figures, LaTeX export, and a functional proof-of-concept system. Optionally, it maps literature to your codebase, runs real experiments, builds a POC from the results, and processes human reviews for revision.
 
 Combines five ideas:
 - **[Ralph Wiggum](https://ghuntley.com/ralph/)** — self-referential AI loop via stop hook
@@ -59,11 +59,14 @@ Then restart Claude Code and run `/plugin install academic-research-loop@academi
 # Applied research — map literature to your codebase
 /research-loop "Voice agent safety" --codebase ~/projects/my-voice-app
 
-# With experiments — write code, run benchmarks, measure results
+# With experiments + POC — write code, run benchmarks, build proof-of-concept
 /research-loop "Lightweight toxicity classifiers" --experiments --min-papers 5
 
-# Full mode — applied research + experiments
+# Full mode — applied research + experiments + POC
 /research-loop "Streaming safety" --codebase ~/projects/app --experiments
+
+# With human review — pause after Phase 7, process reviewer feedback
+/research-loop "Voice agent safety" --human-review --experiments
 ```
 
 The agent reads your project's `CLAUDE.md` and `README.md` on the first iteration to understand context, hypotheses, and priorities before starting research.
@@ -86,8 +89,8 @@ The agent reads your project's `CLAUDE.md` and `README.md` on the first iteratio
 │  Phase 3: Analysis       (max 5 iter)                        │
 │  Deep-read papers + extract ALL quantitative evidence        │
 ├──────────────────────────────────────────────────────────────┤
-│  Phase 4: Synthesis      (max 3 iter, or 6 with experiments) │
-│  Themes, evidence matrix, corpus table, experiments          │
+│  Phase 4: Synthesis      (max 3 iter, or 8 with experiments) │
+│  Themes, evidence matrix, experiments, build POC             │
 ├──────────────────────────────────────────────────────────────┤
 │  Phase 5: Writing        (max 4 iter)                        │
 │  Draft with epistemic calibration + evidence tables          │
@@ -97,6 +100,9 @@ The agent reads your project's `CLAUDE.md` and `README.md` on the first iteratio
 ├──────────────────────────────────────────────────────────────┤
 │  Phase 7: Polish         (max 2 iter)                        │
 │  Figures, cross-validation, LaTeX export                     │
+├──────────────────────────────────────────────────────────────┤
+│  Phase 8: Revision       (max 5 iter, with --human-review)   │
+│  Process reviewer feedback, revise with numeric verification │
 └──────────────────────────────────────────────────────────────┘
      │
      ▼
@@ -105,6 +111,7 @@ The agent reads your project's `CLAUDE.md` and `README.md` on the first iteratio
   ├── final.tex           ← LaTeX (submission-ready)
   ├── figures/             ← SVG figures + generation scripts
   ├── experiments/         ← Experiment scripts + results (with --experiments)
+  ├── poc/                 ← Proof-of-concept system (with --experiments)
   └── research.db         ← All evidence in structured DB
 ```
 
@@ -139,24 +146,41 @@ Maps literature to a specific codebase. Every phase adapts:
 
 Additional output: `state/codebase_analysis.md` and `state/gap_analysis.md`.
 
-### 3. Experimentation (`--experiments`)
+### 3. Experimentation + POC (`--experiments`)
 
 ```bash
 /research-loop "Lightweight toxicity classifiers" --experiments --min-papers 5
 ```
 
-Runs real experiments on your machine. The system:
+Runs real experiments on your machine and builds a functional proof-of-concept system. The system:
 
 1. **experiment-designer** — reads evidence gaps, checks your hardware (GPU/CPU, VRAM, packages), proposes feasible experiments with runtime estimates
 2. **experiment-coder** (Autoresearch pattern) — writes Python scripts, executes them, captures metrics, retries on failure (max 3)
 3. Results stored as `evidence_type="empirical"` — distinct from paper-reported `"measured"` evidence
-4. Paper includes **"Empirical Validation"** section with paper-reported vs locally-measured results side by side
+4. **poc-architect** — reads successful experiment results, designs a minimal POC architecture reusing experiment code
+5. **poc-coder** (Autoresearch pattern) — implements the POC with tests and demo.py, iterates until all tests pass
+6. Paper includes **"Empirical Validation"** and **"Proof-of-Concept System"** sections
+
+Hard blocks enforce that ALL of these must complete before Phase 4 advances — the agent cannot bypass any step.
 
 Combine with `--codebase` for the full pipeline:
 
 ```bash
 /research-loop "Streaming safety" --codebase ~/projects/app --experiments
 ```
+
+### 4. Human Review (`--human-review`)
+
+```bash
+/research-loop "Voice agent safety" --human-review
+```
+
+Adds Phase 8 (revision) after Phase 7. The system pauses for human reviews:
+
+1. Place `REVIEW-N.md` files in `research-output/reviews/` (template provided)
+2. Re-run the loop — **review-handler** triages items into 5 action types: REVISE, RE_DISCOVER, RE_SYNTHESIZE, EXPERIMENT, ACKNOWLEDGED
+3. **revision-writer** rewrites sections to address feedback with mandatory numeric verification
+4. Quality gate (threshold 0.80) with automatic fail on unverified numbers
 
 ## Commands
 
@@ -168,7 +192,8 @@ Combine with `--codebase` for the full pipeline:
 | `--max-iterations N` | 50 | Max global iterations before auto-stop |
 | `--output-dir PATH` | `./research-output` | Where output files go |
 | `--codebase PATH` | *(off)* | Enable applied research — analyze this project and map literature to its components |
-| `--experiments` | *(off)* | Enable experimentation — write code, run benchmarks, train models, measure results |
+| `--experiments` | *(off)* | Enable experimentation — write code, run benchmarks, train models, measure results, and build a functional POC |
+| `--human-review` | *(off)* | Enable human review — pause after Phase 7, process REVIEW-N.md files, produce revised paper |
 | `--completion-promise TEXT` | `"RESEARCH COMPLETE"` | Promise text to signal completion |
 
 Flags combine freely: `--codebase` + `--experiments` runs the full pipeline.
@@ -202,11 +227,23 @@ research-output/
 │   │   ├── exp_1_name.json      # Structured results
 │   │   └── exp_1_name.log       # Execution logs
 │   └── experiment_report.md
+├── poc/                         # (with --experiments) Proof-of-concept system
+│   ├── main.py                  # Entry point / orchestrator
+│   ├── demo.py                  # End-to-end demo (runs in <2 min)
+│   ├── tests/                   # Component tests (pytest)
+│   ├── requirements.txt
+│   ├── README.md
+│   └── poc_report.md            # Implementation summary
+├── reviews/                     # (with --human-review)
+│   ├── REVIEW-TEMPLATE.md       # Template for reviewers
+│   └── REVIEW-N.md              # Human review files
 └── state/
     ├── methodology.md           # PRISMA search protocol + screening funnel
     ├── corpus_table.md          # Structured corpus table (evidence strength per paper)
     ├── evidence_matrix.md       # Cross-paper comparison (MEASURED only)
     ├── experiment_plan.md       # (with --experiments) designed by experiment-designer
+    ├── poc_spec.md              # (with --experiments) POC architecture spec
+    ├── numeric_verification.md  # (with --human-review) verified numbers audit
     ├── codebase_analysis.md     # (with --codebase) component map
     ├── gap_analysis.md          # (with --codebase) gap matrix
     ├── validation_report.json   # Cross-validation results
@@ -277,7 +314,7 @@ Phase 1 documents the search protocol before any papers are found:
 | `confound_treatment` | Speculative hypotheses have limitation analysis |
 | `methodology_documentation` | Search protocol is reproducible |
 
-## Research Team (22 Agents)
+## Research Team (24 Agents)
 
 ### Core Team (Every Iteration)
 
@@ -315,6 +352,10 @@ Phase 1 documents the search protocol before any papers are found:
 | `gap-analyzer` | `--codebase` | Maps literature to codebase gaps (Solved/Partial/Open/Conflicting) |
 | `experiment-designer` | `--experiments` | Checks hardware, designs feasible experiments with runtime estimates |
 | `experiment-coder` | `--experiments` | Autoresearch: writes scripts, executes, evaluates, keep/discard |
+| `poc-architect` | `--experiments` | Designs POC architecture from successful experiment results |
+| `poc-coder` | `--experiments` | Autoresearch: implements POC with tests and demo.py |
+| `review-handler` | `--human-review` | Triages review items into 5 action types |
+| `revision-writer` | `--human-review` | Rewrites sections with mandatory numeric verification |
 
 ## Tools
 
@@ -324,7 +365,7 @@ All Python scripts use **only stdlib** (zero `pip install`):
 |--------|---------|
 | `search_arxiv.py` | ArXiv API search with retry logic |
 | `search_semantic_scholar.py` | Semantic Scholar API with rate limiting |
-| `paper_database.py` | SQLite DB: papers, analyses, evidence, quality scores, agent messages |
+| `paper_database.py` | SQLite DB: papers, analyses, evidence, quality scores, agent messages, reviews |
 | `manage_citations.py` | BibTeX generation, dedup, validation, DB sync |
 | `fetch_paper_content.py` | Multi-strategy content fetcher (ar5iv > S2 > abstract) |
 | `fact_check.py` | Cross-references claims against evidence DB (self-healing) |
@@ -377,13 +418,32 @@ Quality scores include per-dimension breakdown:
 }
 ```
 
+## Hard Blocks (Mandatory Work Enforcement)
+
+Hard blocks prevent phase advancement until mandatory work is done. The agent cannot bypass them — not even via timeout. Each block fires only after prior blocks pass, so the agent sees one issue at a time.
+
+```
+Phase 4 advancement (with --experiments) requires ALL of:
+
+  ✓ Evidence table has >0 entries          (evidence-extractor ran)
+  ✓ Experiment scripts exist               (experiment-designer + coder ran)
+  ✓ Experiment results exist               (experiments were EXECUTED)
+  ✓ Empirical evidence in DB               (results stored as evidence_type="empirical")
+  ✓ POC files exist                        (poc-architect + poc-coder ran)
+  ✓ demo.py exists                         (POC has a runnable demo)
+  ✓ test_*.py files exist                  (POC has tests)
+  ✓ Quality score in DB                    (quality-evaluator scored this phase)
+```
+
+Phase 3 and gated phases (2-6) have their own blocks for evidence and quality scores.
+
 ## Testing
 
 ```bash
-# Python tests (155 tests)
+# Python tests (179 tests)
 python3 -m pytest tests/ -v
 
-# Bash tests (31 tests)
+# Bash tests (47 stop hook + 18 setup = 65 tests)
 bash tests/test_stop_hook.sh
 bash tests/test_setup_script.sh
 ```
@@ -391,13 +451,14 @@ bash tests/test_setup_script.sh
 | Test file | Tests | Coverage |
 |-----------|-------|----------|
 | `test_paper_database.py` | 36 | CRUD, evidence table, quality scores, messages, stats |
+| `test_review_feature.py` | 24 | Review CRUD, CLI, stats, schema validation |
 | `test_manage_citations.py` | 44 | BibTeX generation, dedup, validation, sync-db |
 | `test_svg_utils.py` | 33 | SVG primitives, axes, legends, nice_ticks |
 | `test_search_arxiv.py` | 10 | Query building, XML parsing, fetch |
 | `test_search_semantic_scholar.py` | 9 | Response parsing, API key, filters |
 | `test_fact_check.py` | 10 | Claim extraction, support verification |
 | `test_fetch_paper_content.py` | 10 | HTML extraction, fallback strategies |
-| `test_stop_hook.sh` | 13 | Phase machine, quality gates, corruption handling |
+| `test_stop_hook.sh` | 47 | Phase machine, quality gates, hard blocks (evidence, experiments, POC, quality scores), corruption |
 | `test_setup_script.sh` | 18 | Argument parsing, state file, validation |
 
 ## Local Development
@@ -433,9 +494,15 @@ rsync -av \
 
 **Why project context?** The agent reads `CLAUDE.md` and `README.md` on the first iteration. If your project defines hypotheses, priorities, or constraints, the research adapts to them from the start.
 
-**Why SQLite?** Six tables (papers, analyses, evidence, quality_scores, agent_messages, schema_version) with proper foreign keys. WAL mode for concurrent access. Zero pip dependencies.
+**Why a POC?** A survey that only reports numbers is speculation. With `--experiments`, the system validates findings by running experiments — but isolated benchmark scripts don't prove the architecture works. The POC composes experiment-validated components into a working system with tests and a demo, proving the paper's claims are actionable.
 
-**Why 22 agents?** Screening requires different judgment than writing, which requires different skills than evidence extraction, which requires different rigor than fact-checking, which requires different expertise than experiment design. Each agent has a focused rubric.
+**Why human review?** Autonomous research without external validation is an echo chamber. With `--human-review`, the pipeline pauses after Phase 7, accepts structured reviews (severity, acceptance criteria), and produces verified revisions. Every number in the revision must trace to the evidence DB — unverified claims are automatic fails.
+
+**Why hard blocks?** Quality gates are advisory — the agent can time out and skip them. Hard blocks are mandatory — the agent physically cannot advance until the work is done. No evidence? Stuck. No experiments? Stuck. No POC with tests? Stuck. This turns "should do" into "must do".
+
+**Why SQLite?** Seven tables (papers, analyses, evidence, quality_scores, agent_messages, reviews, schema_version) with proper foreign keys. WAL mode for concurrent access. Zero pip dependencies.
+
+**Why 24 agents?** Screening requires different judgment than writing, which requires different skills than evidence extraction, which requires different rigor than fact-checking, which requires different expertise than experiment design, which requires different skills than POC architecture. Each agent has a focused rubric.
 
 ## Requirements
 
